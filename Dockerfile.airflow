@@ -1,0 +1,26 @@
+# Dockerfile.airflow
+# Extend the official Apache Airflow image for consistency and reliability
+FROM apache/airflow:2.8.1-python3.10
+
+# Switch to root to install system packages
+USER root
+
+# Install bash and any additional OS-level dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    default-libmysqlclient-dev \
+    libpq-dev \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Switch back to airflow user before installing Python dependencies
+USER airflow
+
+# Copy Python requirements and install them
+COPY requirements.txt /requirements.txt
+RUN pip install --no-cache-dir -r /requirements.txt
+
+# Set working directory
+WORKDIR /opt/airflow

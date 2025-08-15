@@ -1,10 +1,29 @@
-pandas
-numpy
-scikit-learn
-xgboost
-mlflow
-fastapi
-uvicorn
-prefect
-evidently
-python-dotenv
+# === Core ML libs ===
+numpy==1.24.4
+pandas==1.5.3
+scikit-learn==1.2.2
+xgboost==1.7.6
+matplotlib==3.6.3
+joblib==1.4.2
+
+# === MLflow ===
+mlflow==2.12.1
+
+# === Web / API helpers ===
+Flask==2.2.5
+gunicorn==21.2.0
+uvicorn==0.29.0
+fastapi==0.110.0
+
+# === Utilities ===
+python-dotenv==1.0.1
+requests==2.31.0
+pyyaml==6.0.1
+psycopg2-binary==2.9.9
+
+# === Evidently (compatible with Pydantic v2) ===
+evidently>=0.4.0
+
+# === Phase 2 Additions: Google Cloud integration ===
+google-cloud-storage==2.15.0
+gcsfs==2024.3.1

@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+
+FROM python:3.10-slim
+
+# Install system dependencies (bash for troubleshooting)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    build-essential \
+    git \
+    curl \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python environment settings for cleaner output & faster imports
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Set working directory
+WORKDIR /app
+
+# Copy and install Python dependencies first (better build caching)
+COPY requirements.serve.txt .
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.serve.txt
+
+# MLflow local tracking (adjust if you mount a different path)
+ENV MLFLOW_TRACKING_URI=file:/app/mlruns
+
+# Create non-root user to match container volumes
+RUN useradd -m -u 10001 appuser \
+    && mkdir -p /app/mlruns \
+    && chown -R appuser:appuser /app
+USER appuser
+
+# Expose the REST API port
+EXPOSE 5000
+
+# Keep entrypoint empty so it can be overridden at runtime (docker-compose or CLI)
+ENTRYPOINT []
+CMD []

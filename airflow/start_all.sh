@@ -1,0 +1,147 @@
+#!/bin/bash
+set -euo pipefail
+
+# ===== CONFIG =====
+AIRFLOW_UID=$(grep -E '^AIRFLOW_UID=' .env | cut -d '=' -f2 || echo "50000")
+MLRUNS_DIR="../mlruns"
+ARTIFACTS_DIR="../artifacts"
+LOGS_DIR="./airflow-logs"
+AIRFLOW_ARTIFACTS_DIR="./artifacts"
+AIRFLOW_LOGS_DIR="./logs"
+
+# ===== FLAGS =====
+FRESH_START=false
+if [[ "${1:-}" == "--fresh" ]]; then
+    FRESH_START=true
+    echo "⚠️  Fresh start mode: will clear old MLflow runs, artifacts, logs, and volumes..."
+fi
+
+echo "ℹ️  Using AIRFLOW_UID=$AIRFLOW_UID"
+
+# ===== STEP 1: Rebuild images =====
+echo
+echo "🔄 STEP 1: Rebuilding required images..."
+docker compose build webserver scheduler mlflow
+
+# ===== STEP 1.5: Prepare host directories =====
+mkdir -p "$MLRUNS_DIR" "$ARTIFACTS_DIR" "$LOGS_DIR" "$AIRFLOW_ARTIFACTS_DIR" "$AIRFLOW_LOGS_DIR"
+
+if $FRESH_START; then
+    echo "🧹 Clearing old runs/artifacts/logs..."
+    sudo rm -rf "$MLRUNS_DIR"/* "$ARTIFACTS_DIR"/* "$AIRFLOW_ARTIFACTS_DIR"/* "$AIRFLOW_LOGS_DIR"/* "$LOGS_DIR"/* || true
+    echo "🧹 Removing old Docker volumes..."
+    docker compose down -v
+fi
+
+# Fix local permissions (host side)
+sudo chown -R "$AIRFLOW_UID":0 "$MLRUNS_DIR" "$ARTIFACTS_DIR" "$LOGS_DIR" "$AIRFLOW_ARTIFACTS_DIR" "$AIRFLOW_LOGS_DIR"
+chmod -R 775 "$MLRUNS_DIR" "$ARTIFACTS_DIR" "$LOGS_DIR" "$AIRFLOW_ARTIFACTS_DIR" "$AIRFLOW_LOGS_DIR"
+echo "✅ Local directories ready."
+
+# ===== STEP 2: Start Postgres =====
+echo
+echo "🚀 STEP 2: Starting Postgres..."
+docker compose up -d postgres
+
+echo "⏳ Waiting for Postgres..."
+counter=0
+until [ "$(docker inspect --format='{{.State.Health.Status}}' airflow-postgres)" == "healthy" ]; do
+    sleep 3
+    counter=$((counter+1))
+    if [ $counter -gt 20 ]; then
+        echo "❌ Postgres did not become healthy."
+        exit 1
+    fi
+done
+echo "✅ Postgres is healthy!"
+
+# ===== STEP 3: Init Airflow DB =====
+echo
+echo "🗄 STEP 3: Initializing Airflow DB..."
+docker compose run --rm airflow-init
+
+# ===== STEP 4: Fix container permissions BEFORE starting Airflow =====
+echo
+echo "🔧 STEP 4: Ensuring container permissions..."
+for service in webserver scheduler mlflow; do
+    docker compose run --rm --user root $service bash -c "
+        mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /tmp/artifacts &&
+        chown -R ${AIRFLOW_UID}:0 /opt/airflow/mlruns /opt/airflow/artifacts /tmp/artifacts &&
+        chmod -R 777 /opt/airflow/mlruns /opt/airflow/artifacts /tmp/artifacts
+    " || true
+done
+
+# ===== STEP 4.5: Remove stale PID files =====
+echo
+echo "🧹 STEP 4.5: Removing stale Airflow PID files..."
+rm -f ./airflow-webserver.pid ./airflow-scheduler.pid || true
+find "$AIRFLOW_LOGS_DIR" -type f -name "*.pid" -exec rm -f {} \; || true
+find "$LOGS_DIR" -type f -name "*.pid" -exec rm -f {} \; || true
+echo "✅ PID files cleaned."
+
+# ===== STEP 5: Start Airflow =====
+echo
+echo "🚀 STEP 5: Starting Airflow webserver and scheduler..."
+docker compose up -d webserver scheduler
+
+echo "⏳ Waiting for Airflow webserver to become healthy..."
+counter=0
+until [ "$(docker inspect --format='{{.State.Health.Status}}' airflow-webserver)" == "healthy" ]; do
+    sleep 5
+    counter=$((counter+1))
+    if [ $counter -gt 60 ]; then
+        echo "❌ Airflow Webserver did not become healthy."
+        echo "💡 Tip: Run ./troubleshoot.sh for details."
+        exit 1
+    fi
+done
+echo "✅ Airflow Webserver is healthy!"
+
+# Create default Airflow admin user if missing
+echo "👤 Ensuring default Airflow admin user exists..."
+docker compose exec webserver bash -c "
+    airflow users list | grep -q 'admin' || bash /opt/airflow/create_airflow_user.sh
+" || {
+    echo "⚠️ Could not verify/create admin user automatically."
+}
+
+# ===== STEP 5.5: Sync .env → Airflow Variables (Phase 2 + Phase 3) =====
+echo
+echo "📌 STEP 5.5: Syncing .env values to Airflow Variables..."
+ENV_VARS_P2=("MODEL_ALIAS" "PREDICTION_INPUT_PATH" "PREDICTION_OUTPUT_PATH" "STORAGE_BACKEND" "GCS_BUCKET")
+ENV_VARS_P3=("MODEL_NAME" "PROMOTE_FROM_ALIAS" "PROMOTE_TO_ALIAS" "PROMOTION_AUC_THRESHOLD" "PROMOTION_F1_THRESHOLD" "SLACK_WEBHOOK_URL" "ALERT_EMAILS")
+
+for var in "${ENV_VARS_P2[@]}" "${ENV_VARS_P3[@]}"; do
+    # Read raw value (keep everything after the first '=')
+    value="$(grep -E "^$var=" .env | sed -E "s/^$var=//")" || value=""
+    if [ -n "${value:-}" ]; then
+        docker compose exec webserver airflow variables set "$var" "$value" >/dev/null
+        echo "   • Set Airflow Variable: $var=${value:0:80}${value:+$( [ ${#value} -gt 80 ] && echo '…' )}"
+    else
+        echo "   • Skipped: $var (not set in .env)"
+    fi
+done
+echo "✅ Airflow Variables synced."
+
+# ===== STEP 6: Start MLflow =====
+echo
+echo "🚀 STEP 6: Starting MLflow..."
+docker compose up -d mlflow
+
+echo "⏳ Waiting for MLflow..."
+counter=0
+until [ "$(docker inspect --format='{{.State.Running}}' mlflow 2>/dev/null)" == "true" ]; do
+    sleep 3
+    counter=$((counter+1))
+    if [ $counter -gt 20 ]; then
+        echo "❌ MLflow did not start."
+        exit 1
+    fi
+done
+echo "✅ MLflow is running!"
+
+# ===== STEP 7: Done =====
+echo
+echo "🎉 All services are up!"
+echo "🌐 Airflow UI:  http://localhost:8080"
+echo "🌐 MLflow UI:   http://localhost:5000"

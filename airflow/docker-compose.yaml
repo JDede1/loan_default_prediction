@@ -1,0 +1,154 @@
+name: airflow
+
+volumes:
+  postgres-db-volume:
+  airflow-logs:
+  mlflow-runs:
+  airflow-artifacts:
+
+
+networks:
+  airflow:
+    driver: bridge
+
+services:
+  postgres:
+    image: postgres:13
+    platform: linux/amd64
+    container_name: airflow-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-airflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airflow}
+      POSTGRES_DB: ${POSTGRES_DB:-airflow}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airflow} -d ${POSTGRES_DB:-airflow}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    networks:
+      - airflow
+
+  airflow-init:
+    build:
+      context: ..
+      dockerfile: Dockerfile.airflow
+    platform: linux/amd64
+    container_name: airflow-init
+    user: "${AIRFLOW_UID:-50000}:0"
+    env_file:
+      - ./.env
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs
+        chown -R airflow:root /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs
+        chmod -R 775 /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs
+        airflow db init &&
+        bash /opt/airflow/create_airflow_user.sh || true
+    volumes:
+      - ./:/opt/airflow
+      - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
+      - airflow-artifacts:/opt/airflow/artifacts
+      - mlflow-runs:/opt/airflow/mlruns
+      - airflow-logs:/home/airflow/logs
+      # === Phase 2: Mount GCP service account key ===
+      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - airflow
+    restart: "no"
+
+  webserver:
+    build:
+      context: ..
+      dockerfile: Dockerfile.airflow
+    platform: linux/amd64
+    container_name: airflow-webserver
+    user: "${AIRFLOW_UID:-50000}:0"
+    env_file:
+      - ./.env
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        rm -f /home/airflow/airflow-webserver.pid || true
+        mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
+        chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
+        chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
+        exec airflow webserver
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./:/opt/airflow
+      - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
+      - airflow-artifacts:/opt/airflow/artifacts
+      - mlflow-runs:/opt/airflow/mlruns
+      - airflow-logs:/home/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+      # === Phase 2: Mount GCP service account key ===
+      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "http://localhost:8080/health" ]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+    networks:
+      - airflow
+    restart: always
+
+  scheduler:
+    build:
+      context: ..
+      dockerfile: Dockerfile.airflow
+    platform: linux/amd64
+    container_name: airflow-scheduler
+    user: "${AIRFLOW_UID:-50000}:0"
+    env_file:
+      - ./.env
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
+        chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
+        chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
+        exec airflow scheduler
+    volumes:
+      - ./:/opt/airflow
+      - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
+      - airflow-artifacts:/opt/airflow/artifacts
+      - mlflow-runs:/opt/airflow/mlruns
+      - airflow-logs:/home/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+      # === Phase 2: Mount GCP service account key ===
+      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - airflow
+    restart: always
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.9.2
+    platform: linux/amd64
+    container_name: mlflow
+    user: "${AIRFLOW_UID:-50000}:0"
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-runs:/opt/airflow/mlruns
+    command: mlflow ui --backend-store-uri file:/opt/airflow/mlruns --host 0.0.0.0 --port 5000
+    networks:
+      - airflow

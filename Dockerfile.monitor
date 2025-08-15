@@ -1,0 +1,30 @@
+FROM python:3.10-slim
+
+# Install bash (needed for troubleshooting and exec commands)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create airflow user for consistent permissions with docker-compose mounts
+RUN useradd -ms /bin/bash airflow && \
+    mkdir -p /opt/airflow/logs && \
+    chown -R airflow:airflow /opt/airflow
+
+# Set working directory to match Airflow's path structure
+WORKDIR /opt/airflow
+
+# Copy only the monitoring requirements first (leverage Docker build cache)
+COPY requirements-monitoring.txt .
+
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements-monitoring.txt
+
+# Copy source code for monitoring (same path as Airflow containers)
+COPY src/ src/
+
+# Switch to airflow user
+USER airflow
+
+# Default command: run the monitoring script
+CMD ["python", "src/monitor_predictions.py"]

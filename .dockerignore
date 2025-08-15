@@ -1,0 +1,52 @@
+# System + virtualenv
+__pycache__/
+*.py[cod]
+*.swp
+.DS_Store
+.env
+.m*/   # hides .mlflow-venv and .mlflow-venv310
+
+# Editors
+.vscode/
+.idea/
+
+# Notebooks & archive
+*.ipynb
+archive/
+
+# Logs, images, outputs
+*.log
+*.png
+*.csv
+*.json
+
+# Shell scripts
+*.sh
+*.ps1
+
+# Git
+.git/
+.gitignore
+
+# Ignore all by default, allow what’s needed
+mlruns/
+!mlruns/**/meta.yaml
+!mlruns/**/MLmodel
+
+model/
+!model/model.xgb
+!model/MLmodel
+!model/requirements.txt
+
+artifacts/
+!artifacts/*.png
+!artifacts/*.json
+
+# Explicit includes
+!src/
+!airflow/
+!Dockerfile
+!Dockerfile.*
+!requirements.txt
+!requirements-monitoring.txt
+!requirements.serve.txt
