@@ -2,7 +2,12 @@
 set -euo pipefail
 
 # ===== CONFIG =====
-ENV_FILE="../.env"
+# Resolve repo root dynamically (works from anywhere)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="$REPO_ROOT/.env"
+COMPOSE_FILE="$REPO_ROOT/airflow/docker-compose.yaml"
+
 AIRFLOW_UID=$(grep -E '^AIRFLOW_UID=' "$ENV_FILE" | cut -d '=' -f2 || echo "50000")
 
 echo "ℹ️ Using AIRFLOW_UID=$AIRFLOW_UID"
@@ -10,12 +15,12 @@ echo "ℹ️ Using AIRFLOW_UID=$AIRFLOW_UID"
 # ===== STEP 1: Rebuild serving image =====
 echo
 echo "🔄 STEP 1: Rebuilding serving image..."
-docker compose build serve
+docker compose -f "$COMPOSE_FILE" build serve
 
 # ===== STEP 2: Fix permissions for serving container =====
 echo
 echo "🔧 STEP 2: Ensuring serving container permissions..."
-docker compose run --rm --user root serve bash -c "
+docker compose -f "$COMPOSE_FILE" run --rm --user root serve bash -c "
     mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/keys /tmp/artifacts &&
     chown -R ${AIRFLOW_UID}:0 /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/keys /tmp/artifacts &&
     chmod -R 777 /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/keys /tmp/artifacts
@@ -24,7 +29,7 @@ docker compose run --rm --user root serve bash -c "
 # ===== STEP 3: Start model serving =====
 echo
 echo "🚀 STEP 3: Starting model serving (REST API)..."
-docker compose up -d serve
+docker compose -f "$COMPOSE_FILE" up -d serve
 
 echo "⏳ Waiting for model serving container..."
 counter=0

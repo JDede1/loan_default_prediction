@@ -3,56 +3,60 @@ set -euo pipefail
 
 echo "🔍 Airflow, MLflow & Serving Troubleshooting Script"
 
-# ===== CONFIG (keep in sync with start_all.sh) =====
-ROOT_ENV="../.env"   # Always point to root .env
-MLRUNS_DIR="../mlruns"
-ARTIFACTS_DIR="../artifacts"
-LOGS_DIR="./airflow-logs"
-AIRFLOW_ARTIFACTS_DIR="./artifacts"
-AIRFLOW_LOGS_DIR="./logs"
-KEYS_DIR="./keys"
+# ===== CONFIG =====
+# Resolve repo root dynamically (works from anywhere)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="$REPO_ROOT/.env"
+COMPOSE_FILE="$REPO_ROOT/airflow/docker-compose.yaml"
+
+MLRUNS_DIR="$REPO_ROOT/mlruns"
+ARTIFACTS_DIR="$REPO_ROOT/artifacts"
+AIRFLOW_ARTIFACTS_DIR="$REPO_ROOT/airflow/artifacts"
+AIRFLOW_LOGS_DIR="$REPO_ROOT/airflow/logs"
+KEYS_DIR="$REPO_ROOT/airflow/keys"
 
 echo
 echo "🔍 STEP 1: Checking Docker Compose service status..."
-docker compose ps
+docker compose -f "$COMPOSE_FILE" ps
 
 echo
 echo "📋 STEP 2: Listing all services from docker-compose.yaml..."
-services=$(docker compose config --services)
+services=$(docker compose -f "$COMPOSE_FILE" config --services)
 
 for service in $services; do
-    status=$(docker inspect --format='{{.State.Status}}' $(docker compose ps -q $service) 2>/dev/null || echo "not_found")
-    health=$(docker inspect --format='{{.State.Health.Status}}' $(docker compose ps -q $service) 2>/dev/null || echo "none")
+    status=$(docker inspect --format='{{.State.Status}}' $(docker compose -f "$COMPOSE_FILE" ps -q $service) 2>/dev/null || echo "not_found")
+    health=$(docker inspect --format='{{.State.Health.Status}}' $(docker compose -f "$COMPOSE_FILE" ps -q $service) 2>/dev/null || echo "none")
 
     echo "➡️  Service: $service | Status: $status | Health: $health"
 
     if [[ "$status" != "running" || "$health" == "unhealthy" ]]; then
         echo "⚠️  Service $service is not healthy — showing last 20 logs..."
-        docker compose logs --tail=20 $service || true
+        docker compose -f "$COMPOSE_FILE" logs --tail=20 $service || true
 
         case $service in
             webserver)
                 echo "🛠  Fixing Airflow webserver..."
-                docker compose exec --user root webserver bash -c "
+                docker compose -f "$COMPOSE_FILE" exec --user root webserver bash -c "
                     rm -f /home/airflow/airflow-webserver.pid || true &&
                     mkdir -p /home/airflow/logs/scheduler /home/airflow/logs/dag_processor &&
                     chown -R airflow:root /home/airflow/logs &&
                     chmod -R 775 /home/airflow/logs
                 "
-                docker compose restart webserver
+                docker compose -f "$COMPOSE_FILE" restart webserver
                 ;;
             scheduler)
                 echo "🛠  Fixing Airflow scheduler..."
-                docker compose exec --user root scheduler bash -c "
+                docker compose -f "$COMPOSE_FILE" exec --user root scheduler bash -c "
                     mkdir -p /home/airflow/logs/scheduler /home/airflow/logs/dag_processor &&
                     chown -R airflow:root /home/airflow/logs &&
                     chmod -R 775 /home/airflow/logs
                 "
-                docker compose restart scheduler
+                docker compose -f "$COMPOSE_FILE" restart scheduler
                 ;;
             postgres)
                 echo "🛠  Restarting Postgres..."
-                docker compose restart postgres
+                docker compose -f "$COMPOSE_FILE" restart postgres
                 ;;
             mlflow)
                 echo "🛠  Fixing MLflow folder permissions..."
@@ -62,16 +66,16 @@ for service in $services; do
                 else
                     chmod -R 777 "$MLRUNS_DIR" "$ARTIFACTS_DIR" "$AIRFLOW_ARTIFACTS_DIR" || true
                 fi
-                docker compose restart mlflow
+                docker compose -f "$COMPOSE_FILE" restart mlflow
                 ;;
             serve)
                 echo "🛠  Fixing Serve container permissions..."
-                docker compose run --rm --user root serve bash -c "
+                docker compose -f "$COMPOSE_FILE" run --rm --user root serve bash -c "
                     mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/keys /tmp/artifacts &&
                     chown -R $(id -u):0 /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/keys /tmp/artifacts &&
                     chmod -R 777 /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/keys /tmp/artifacts
                 " || true
-                docker compose restart serve
+                docker compose -f "$COMPOSE_FILE" restart serve
                 ;;
             airflow-init)
                 echo "ℹ️  airflow-init runs only during first start or DB reset."
@@ -85,9 +89,9 @@ done
 
 echo
 echo "🔹 STEP 3: Checking if Airflow DB is initialized..."
-if ! docker compose exec webserver airflow db check >/dev/null 2>&1; then
+if ! docker compose -f "$COMPOSE_FILE" exec webserver airflow db check >/dev/null 2>&1; then
     echo "⚙️  Airflow DB not initialized — running airflow-init..."
-    docker compose run --rm airflow-init
+    docker compose -f "$COMPOSE_FILE" run --rm airflow-init
 else
     echo "✅ Airflow DB is already initialized."
 fi
@@ -131,10 +135,10 @@ PHASE_VARS=("MODEL_ALIAS" "PREDICTION_INPUT_PATH" "PREDICTION_OUTPUT_PATH" "STOR
             "PROMOTION_TRIGGER_SOURCE" "PROMOTION_TRIGGERED_BY" "SLACK_WEBHOOK_URL" "ALERT_EMAILS")
 
 for var in "${PHASE_VARS[@]}"; do
-    value=$(docker compose exec webserver airflow variables get "$var" 2>/dev/null || echo "(not set)")
+    value=$(docker compose -f "$COMPOSE_FILE" exec webserver airflow variables get "$var" 2>/dev/null || echo "(not set)")
     echo "   • $var = $value"
 done
 
 echo
 echo "✅ STEP 7: Final service status:"
-docker compose ps
+docker compose -f "$COMPOSE_FILE" ps

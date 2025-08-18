@@ -1,14 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-# ===== CONFIG (keep in sync with start_all.sh) =====
-ROOT_ENV="../.env"   # Always point to root .env
-MLRUNS_DIR="../mlruns"
-ARTIFACTS_DIR="../artifacts"
-LOGS_DIR="./airflow-logs"
-AIRFLOW_ARTIFACTS_DIR="./artifacts"
-AIRFLOW_LOGS_DIR="./logs"
-KEYS_DIR="./keys"
+# ===== CONFIG =====
+# Resolve repo root dynamically (works from anywhere)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="$REPO_ROOT/.env"
+COMPOSE_FILE="$REPO_ROOT/airflow/docker-compose.yaml"
+
+MLRUNS_DIR="$REPO_ROOT/mlruns"
+ARTIFACTS_DIR="$REPO_ROOT/artifacts"
+LOGS_DIR="$REPO_ROOT/airflow/airflow-logs"
+AIRFLOW_ARTIFACTS_DIR="$REPO_ROOT/airflow/artifacts"
+AIRFLOW_LOGS_DIR="$REPO_ROOT/airflow/logs"
+KEYS_DIR="$REPO_ROOT/airflow/keys"
 
 FRESH_RESET=false
 RESET_VARS=false
@@ -40,18 +45,18 @@ fi
 # ===== STEP 1: Stop core infra =====
 echo "🛑 STEP 1: Stop services (Airflow + MLflow + Serve)..."
 if $FRESH_RESET; then
-  docker compose stop webserver scheduler mlflow postgres serve    # ⬅ added serve
-  docker compose rm -f webserver scheduler mlflow postgres serve   # ⬅ added serve
-  docker compose down -v
+  docker compose -f "$COMPOSE_FILE" stop webserver scheduler mlflow postgres serve
+  docker compose -f "$COMPOSE_FILE" rm -f webserver scheduler mlflow postgres serve
+  docker compose -f "$COMPOSE_FILE" down -v
 else
-  docker compose stop webserver scheduler mlflow postgres serve    # ⬅ added serve
-  docker compose rm -f webserver scheduler mlflow postgres serve   # ⬅ added serve
+  docker compose -f "$COMPOSE_FILE" stop webserver scheduler mlflow postgres serve
+  docker compose -f "$COMPOSE_FILE" rm -f webserver scheduler mlflow postgres serve
 fi
 
 # ===== STEP 2: Clean PID files =====
 echo
 echo "🧹 STEP 2: Clean host PID files..."
-rm -f ./airflow-webserver.pid ./airflow-scheduler.pid || true
+rm -f "$REPO_ROOT/airflow/airflow-webserver.pid" "$REPO_ROOT/airflow/airflow-scheduler.pid" || true
 find "$AIRFLOW_LOGS_DIR" -type f -name "*.pid" -exec rm -f {} \; || true
 find "$LOGS_DIR" -type f -name "*.pid" -exec rm -f {} \; || true
 echo "✅ PID files cleaned."
@@ -118,7 +123,7 @@ if $RESET_VARS; then
 
   for var in "${ENV_VARS[@]}"; do
     echo "   • Removing Airflow Variable: $var"
-    docker compose run --rm webserver airflow variables delete "$var" || true
+    docker compose -f "$COMPOSE_FILE" run --rm webserver airflow variables delete "$var" || true
   done
   echo "✅ Airflow Variables cleared."
 fi
