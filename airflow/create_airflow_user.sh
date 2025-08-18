@@ -1,11 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
-# Load .env variables
-if [ -f /opt/airflow/.env ]; then
+# ===== Load root-level .env if available =====
+# Inside the container, airflow/ is mounted at /opt/airflow
+# so the root .env is at /opt/airflow/../.env
+ENV_FILE="/opt/airflow/../.env"
+
+if [ -f "$ENV_FILE" ]; then
+    echo "📂 Loading environment variables from $ENV_FILE"
     set -a
-    source /opt/airflow/.env
+    source "$ENV_FILE"
     set +a
+else
+    echo "⚠️  No .env file found at $ENV_FILE, using defaults."
 fi
 
 USERNAME="${_AIRFLOW_WWW_USER_USERNAME:-admin}"

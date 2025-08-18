@@ -1,11 +1,10 @@
 # Dockerfile.airflow
-# Extend the official Apache Airflow image for consistency and reliability
 FROM apache/airflow:2.8.1-python3.10
 
 # Switch to root to install system packages
 USER root
 
-# Install bash and any additional OS-level dependencies
+# Install bash, dependencies, and Google Cloud SDK (gcloud + gsutil)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     build-essential \
@@ -13,7 +12,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     git \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+ && mkdir -p /usr/share/keyrings \
+ && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+    | gpg --dearmor > /usr/share/keyrings/cloud.google.gpg \
+ && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
+    > /etc/apt/sources.list.d/google-cloud-sdk.list \
+ && apt-get update && apt-get install -y google-cloud-sdk \
+ && rm -rf /var/lib/apt/lists/*
 
 # Switch back to airflow user before installing Python dependencies
 USER airflow
@@ -22,5 +30,4 @@ USER airflow
 COPY requirements.txt /requirements.txt
 RUN pip install --no-cache-dir -r /requirements.txt
 
-# Set working directory
 WORKDIR /opt/airflow

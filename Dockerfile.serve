@@ -2,7 +2,7 @@
 
 FROM python:3.10-slim
 
-# Install system dependencies (bash for troubleshooting)
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     build-essential \
@@ -11,30 +11,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     && rm -rf /var/lib/apt/lists/*
 
-# Python environment settings for cleaner output & faster imports
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Set working directory
 WORKDIR /app
 
-# Copy and install Python dependencies first (better build caching)
+# Copy dependencies
 COPY requirements.serve.txt .
 RUN pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.serve.txt
 
-# MLflow local tracking (adjust if you mount a different path)
-ENV MLFLOW_TRACKING_URI=file:/app/mlruns
+# 👇 Ensure GCS dependencies are installed (in case they're missing from requirements.serve.txt)
+RUN pip install --no-cache-dir google-cloud-storage gcsfs
 
-# Create non-root user to match container volumes
+# 👇 Point to Airflow mlruns folder inside container
+ENV MLFLOW_TRACKING_URI=file:/app/airflow/mlruns
+
+# Create non-root user
 RUN useradd -m -u 10001 appuser \
-    && mkdir -p /app/mlruns \
+    && mkdir -p /app/airflow/mlruns \
     && chown -R appuser:appuser /app
 USER appuser
 
-# Expose the REST API port
-EXPOSE 5000
+# Expose port 5001 to match integration tests
+EXPOSE 5001
 
-# Keep entrypoint empty so it can be overridden at runtime (docker-compose or CLI)
+# Leave entrypoint flexible
 ENTRYPOINT []
 CMD []
+
+ENV GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json

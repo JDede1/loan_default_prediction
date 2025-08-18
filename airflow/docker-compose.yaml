@@ -1,11 +1,10 @@
-name: airflow
+name: airflow 
 
 volumes:
   postgres-db-volume:
   airflow-logs:
-  mlflow-runs:
+  mlflow-runs:        # still used for backend store
   airflow-artifacts:
-
 
 networks:
   airflow:
@@ -38,7 +37,7 @@ services:
     container_name: airflow-init
     user: "${AIRFLOW_UID:-50000}:0"
     env_file:
-      - ./.env
+      - ../.env
     entrypoint: /bin/bash
     command:
       - -c
@@ -46,6 +45,7 @@ services:
         mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs
         chown -R airflow:root /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs
         chmod -R 775 /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs
+        gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
         airflow db init &&
         bash /opt/airflow/create_airflow_user.sh || true
     volumes:
@@ -55,7 +55,7 @@ services:
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
       - airflow-logs:/home/airflow/logs
-      # === Phase 2: Mount GCP service account key ===
+      # === GCP service account key ===
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     depends_on:
       postgres:
@@ -72,7 +72,7 @@ services:
     container_name: airflow-webserver
     user: "${AIRFLOW_UID:-50000}:0"
     env_file:
-      - ./.env
+      - ../.env
     entrypoint: /bin/bash
     command:
       - -c
@@ -81,6 +81,7 @@ services:
         mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
         chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
         chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
+        gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
         exec airflow webserver
     ports:
       - "8080:8080"
@@ -92,7 +93,7 @@ services:
       - mlflow-runs:/opt/airflow/mlruns
       - airflow-logs:/home/airflow/logs
       - /var/run/docker.sock:/var/run/docker.sock
-      # === Phase 2: Mount GCP service account key ===
+      # === GCP service account key ===
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     depends_on:
       postgres:
@@ -114,7 +115,7 @@ services:
     container_name: airflow-scheduler
     user: "${AIRFLOW_UID:-50000}:0"
     env_file:
-      - ./.env
+      - ../.env
     entrypoint: /bin/bash
     command:
       - -c
@@ -122,6 +123,7 @@ services:
         mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
         chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
         chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
+        gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
         exec airflow scheduler
     volumes:
       - ./:/opt/airflow
@@ -131,7 +133,7 @@ services:
       - mlflow-runs:/opt/airflow/mlruns
       - airflow-logs:/home/airflow/logs
       - /var/run/docker.sock:/var/run/docker.sock
-      # === Phase 2: Mount GCP service account key ===
+      # === GCP service account key ===
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     depends_on:
       postgres:
@@ -141,14 +143,56 @@ services:
     restart: always
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.9.2
+    image: ghcr.io/mlflow/mlflow:v3.1.4   # ✅ upgraded to match serve
     platform: linux/amd64
     container_name: mlflow
     user: "${AIRFLOW_UID:-50000}:0"
     ports:
       - "5000:5000"
     volumes:
+      - mlflow-runs:/opt/airflow/mlruns   # backend store (experiment metadata)
+    command: >
+      mlflow server 
+      --backend-store-uri file:/opt/airflow/mlruns
+      --default-artifact-root gs://loan-default-artifacts-loan-default-mlops/mlflow
+      --host 0.0.0.0 --port 5000
+    networks:
+      - airflow
+
+  serve:
+    build:
+      context: ..
+      dockerfile: Dockerfile.serve
+    platform: linux/amd64
+    container_name: model-serve
+    ports:
+      - "5001:5001"
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
+    volumes:
       - mlflow-runs:/opt/airflow/mlruns
-    command: mlflow ui --backend-store-uri file:/opt/airflow/mlruns --host 0.0.0.0 --port 5000
+      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
+    command: >
+      mlflow models serve -m "models:/loan_default_model@staging"
+      --host 0.0.0.0 --port 5001 --no-conda
+    depends_on:
+      - mlflow     # ✅ ensure mlflow is started first
+    networks:
+      - airflow
+      
+  terraform:
+    build:
+      context: ..
+      dockerfile: Dockerfile.terraform
+    platform: linux/amd64
+    container_name: terraform
+    working_dir: /infra/terraform
+    volumes:
+      - ../infra/terraform:/infra/terraform
+      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
+    entrypoint: ["/bin/bash", "-c"]
     networks:
       - airflow

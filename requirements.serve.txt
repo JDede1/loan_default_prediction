@@ -1,13 +1,18 @@
-# requirements.serve.txt
-# Model runtime dependencies (from conda.yaml)
+# MLflow aligned with tracking server
 mlflow==3.1.4
-numpy==2.2.6
-pandas==2.3.1
-pyarrow==20.0.0
-scikit-learn==1.7.1
-scipy==1.15.3
-xgboost==3.0.3
 
-# Serving API dependencies
-fastapi==0.95.2
-uvicorn[standard]==0.23.2
+# Core model/runtime deps (let pip resolve compatible versions)
+numpy
+pandas
+pyarrow
+scikit-learn
+scipy
+xgboost
+
+# Serving API deps
+fastapi
+uvicorn[standard]
+
+# GCS support
+google-cloud-storage
+gcsfs

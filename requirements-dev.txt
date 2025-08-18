@@ -1,0 +1,25 @@
+# requirements-dev.txt
+# Development and testing dependencies
+
+# Core testing framework
+pytest>=8.0.0
+pytest-cov>=4.1.0
+
+# Linting & formatting
+flake8>=7.0.0
+black>=24.0.0
+isort>=5.12.0
+
+# Type checking
+mypy>=1.8.0
+types-requests
+
+# HTTP requests
+requests>=2.32.0
+
+# MLflow for testing model loading & batch predictions
+mlflow>=2.14.0
+
+# Any extras for dev notebooks/debugging
+ipython
+jupyter

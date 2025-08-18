@@ -4,27 +4,32 @@ import shutil
 import pandas as pd
 from datetime import datetime
 from typing import List
+import argparse
 
 from evidently.report import Report
 from evidently.metric_preset import DataDriftPreset, TargetDriftPreset
 from evidently.pipeline.column_mapping import ColumnMapping
 
 # Phase 2 imports
-from airflow.models import Variable
+try:
+    from airflow.models import Variable
+except ImportError:
+    Variable = None  # Allow running outside Airflow
+
 from google.cloud import storage
+
 
 # =========================
 # Paths & constants
 # =========================
 BASE_DIR = "/opt/airflow"
-DATA_DIR = os.path.join(BASE_DIR, "data")
 ARTIFACT_DIR = os.path.join(BASE_DIR, "artifacts")
 TMP_ARTIFACT_DIR = "/tmp/artifacts"
 
-TRAIN_DATA_PATH = os.path.join(DATA_DIR, "loan_default_selected_features_clean.csv")
-
+# Ensure dirs exist
 os.makedirs(ARTIFACT_DIR, exist_ok=True)
 os.makedirs(TMP_ARTIFACT_DIR, exist_ok=True)
+
 
 # =========================
 # Helpers
@@ -41,6 +46,7 @@ def list_prediction_files(directories: List[str]) -> List[str]:
             continue
     return sorted(found, reverse=True)
 
+
 def get_latest_prediction_file() -> str:
     """Find the newest predictions file from artifacts or tmp."""
     candidates = list_prediction_files([ARTIFACT_DIR, TMP_ARTIFACT_DIR])
@@ -51,6 +57,7 @@ def get_latest_prediction_file() -> str:
     latest = candidates[0]
     print(f"✅ Using latest batch predictions: {latest}")
     return latest
+
 
 def safe_write_bytes(path: str, data: bytes) -> str:
     """Try writing to ARTIFACT_DIR first, fallback to TMP if permissions fail."""
@@ -65,8 +72,10 @@ def safe_write_bytes(path: str, data: bytes) -> str:
         print(f"⚠️ Permission denied writing directly to {path}. Keeping in tmp: {tmp_name}")
         return tmp_name
 
+
 def safe_write_text(path: str, text: str) -> str:
     return safe_write_bytes(path, text.encode("utf-8"))
+
 
 def upload_to_gcs(local_path: str, bucket_name: str, destination_blob: str):
     """Upload a file to GCS."""
@@ -75,37 +84,56 @@ def upload_to_gcs(local_path: str, bucket_name: str, destination_blob: str):
     bucket = client.bucket(bucket_name)
     blob = bucket.blob(destination_blob)
     blob.upload_from_filename(local_path)
-    print("✅ Upload complete.")
+    print(f"✅ Upload complete → gs://{bucket_name}/{destination_blob}")
+
+
+def read_csv_maybe_gcs(path: str) -> pd.DataFrame:
+    """Read CSV from local path or gs:// URI."""
+    if path.startswith("gs://"):
+        return pd.read_csv(path, storage_options={"token": "google_default"})
+    return pd.read_csv(path)
+
 
 # =========================
 # Main
 # =========================
-def main():
+def main(args):
+    # Determine training and prediction paths
+    train_data_path = args.train_data_path or os.getenv("TRAIN_DATA_PATH")
+    prediction_path = args.prediction_path
+
+    if not prediction_path:
+        # Try Airflow Variable first
+        if Variable:
+            try:
+                prediction_path = Variable.get("LATEST_PREDICTION_PATH", default_var="")
+            except Exception:
+                prediction_path = ""
+        if not prediction_path:
+            print("🔎 Searching for latest batch prediction file...")
+            prediction_path = get_latest_prediction_file()
+
+    if not train_data_path or not prediction_path:
+        raise ValueError(
+            f"❌ Both TRAIN_DATA_PATH and PREDICTION_PATH must be provided. "
+            f"Got TRAIN_DATA_PATH={train_data_path}, PREDICTION_PATH={prediction_path}"
+        )
+
+    print(f"📌 TRAIN_DATA_PATH={train_data_path}")
+    print(f"📌 PREDICTION_PATH={prediction_path}")
+
     # Unique filenames per run
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     report_json_path = os.path.join(ARTIFACT_DIR, f"monitoring_report_{timestamp}.json")
     report_html_path = os.path.join(ARTIFACT_DIR, f"monitoring_report_{timestamp}.html")
 
-    # Determine prediction path
-    try:
-        latest_pred_path = Variable.get("LATEST_PREDICTION_PATH", default_var="")
-    except Exception:
-        latest_pred_path = ""
-
-    if latest_pred_path and os.path.exists(latest_pred_path):
-        batch_file = latest_pred_path
-        print(f"📌 Using prediction file from Airflow Variable: {batch_file}")
-    else:
-        print("🔎 Searching for latest batch prediction file...")
-        batch_file = get_latest_prediction_file()
-
     # 1) Load training (reference) data
     print("📦 Loading training (reference) data...")
-    train_df = pd.read_csv(TRAIN_DATA_PATH)
+    train_df = read_csv_maybe_gcs(train_data_path)
     print(f"✅ train_df: {train_df.shape[0]} rows, {train_df.shape[1]} cols")
 
     # 2) Load batch predictions
-    batch_df = pd.read_csv(batch_file)
+    batch_df = read_csv_maybe_gcs(prediction_path)
     print(f"✅ batch_df: {batch_df.shape[0]} rows, {batch_df.shape[1]} cols")
 
     # 3) Ensure target column alignment
@@ -151,8 +179,16 @@ def main():
     gcs_bucket = os.getenv("GCS_BUCKET")
 
     if storage_backend.lower() == "gcs" and gcs_bucket:
-        upload_to_gcs(final_json_path, gcs_bucket, f"reports/{os.path.basename(final_json_path)}")
-        upload_to_gcs(final_html_path, gcs_bucket, f"reports/{os.path.basename(final_html_path)}")
+        dest_json = f"reports/{os.path.basename(final_json_path)}"
+        dest_html = f"reports/{os.path.basename(final_html_path)}"
+        upload_to_gcs(final_json_path, gcs_bucket, dest_json)
+        upload_to_gcs(final_html_path, gcs_bucket, dest_html)
+
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run Evidently monitoring on training vs prediction data")
+    parser.add_argument("--train_data_path", type=str, help="Path to training data (CSV). Supports gs:// paths.")
+    parser.add_argument("--prediction_path", type=str, help="Path to prediction data (CSV). Supports gs:// paths.")
+    args = parser.parse_args()
+
+    main(args)

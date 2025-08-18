@@ -2,12 +2,15 @@
 set -euo pipefail
 
 # ===== CONFIG =====
-AIRFLOW_UID=$(grep -E '^AIRFLOW_UID=' .env | cut -d '=' -f2 || echo "50000")
+# Point explicitly to the root .env (one level up from airflow/)
+ENV_FILE="../.env"
+AIRFLOW_UID=$(grep -E '^AIRFLOW_UID=' "$ENV_FILE" | cut -d '=' -f2 || echo "50000")
 MLRUNS_DIR="../mlruns"
 ARTIFACTS_DIR="../artifacts"
 LOGS_DIR="./airflow-logs"
 AIRFLOW_ARTIFACTS_DIR="./artifacts"
 AIRFLOW_LOGS_DIR="./logs"
+KEYS_DIR="./keys"
 
 # ===== FLAGS =====
 FRESH_START=false
@@ -21,21 +24,34 @@ echo "ℹ️  Using AIRFLOW_UID=$AIRFLOW_UID"
 # ===== STEP 1: Rebuild images =====
 echo
 echo "🔄 STEP 1: Rebuilding required images..."
-docker compose build webserver scheduler mlflow
+docker compose build webserver scheduler mlflow serve
 
 # ===== STEP 1.5: Prepare host directories =====
-mkdir -p "$MLRUNS_DIR" "$ARTIFACTS_DIR" "$LOGS_DIR" "$AIRFLOW_ARTIFACTS_DIR" "$AIRFLOW_LOGS_DIR"
+mkdir -p "$MLRUNS_DIR" "$ARTIFACTS_DIR" "$LOGS_DIR" \
+         "$AIRFLOW_ARTIFACTS_DIR" "$AIRFLOW_LOGS_DIR" "$KEYS_DIR"
 
 if $FRESH_START; then
     echo "🧹 Clearing old runs/artifacts/logs..."
-    sudo rm -rf "$MLRUNS_DIR"/* "$ARTIFACTS_DIR"/* "$AIRFLOW_ARTIFACTS_DIR"/* "$AIRFLOW_LOGS_DIR"/* "$LOGS_DIR"/* || true
+    rm -rf "$MLRUNS_DIR"/* "$ARTIFACTS_DIR"/* \
+           "$AIRFLOW_ARTIFACTS_DIR"/* "$AIRFLOW_LOGS_DIR"/* \
+           "$LOGS_DIR"/* /tmp/artifacts/* || true
     echo "🧹 Removing old Docker volumes..."
     docker compose down -v
 fi
 
-# Fix local permissions (host side)
-sudo chown -R "$AIRFLOW_UID":0 "$MLRUNS_DIR" "$ARTIFACTS_DIR" "$LOGS_DIR" "$AIRFLOW_ARTIFACTS_DIR" "$AIRFLOW_LOGS_DIR"
-chmod -R 775 "$MLRUNS_DIR" "$ARTIFACTS_DIR" "$LOGS_DIR" "$AIRFLOW_ARTIFACTS_DIR" "$AIRFLOW_LOGS_DIR"
+# Fix local permissions (host side) — portable for Codespaces & local dev
+if command -v sudo &>/dev/null; then
+    sudo chown -R "$AIRFLOW_UID":0 \
+        "$MLRUNS_DIR" "$ARTIFACTS_DIR" "$LOGS_DIR" \
+        "$AIRFLOW_ARTIFACTS_DIR" "$AIRFLOW_LOGS_DIR" "$KEYS_DIR" || true
+    sudo chmod -R 775 \
+        "$MLRUNS_DIR" "$ARTIFACTS_DIR" "$LOGS_DIR" \
+        "$AIRFLOW_ARTIFACTS_DIR" "$AIRFLOW_LOGS_DIR" "$KEYS_DIR" || true
+else
+    chmod -R 777 \
+        "$MLRUNS_DIR" "$ARTIFACTS_DIR" "$LOGS_DIR" \
+        "$AIRFLOW_ARTIFACTS_DIR" "$AIRFLOW_LOGS_DIR" "$KEYS_DIR" || true
+fi
 echo "✅ Local directories ready."
 
 # ===== STEP 2: Start Postgres =====
@@ -63,11 +79,11 @@ docker compose run --rm airflow-init
 # ===== STEP 4: Fix container permissions BEFORE starting Airflow =====
 echo
 echo "🔧 STEP 4: Ensuring container permissions..."
-for service in webserver scheduler mlflow; do
+for service in webserver scheduler mlflow serve; do
     docker compose run --rm --user root $service bash -c "
-        mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /tmp/artifacts &&
-        chown -R ${AIRFLOW_UID}:0 /opt/airflow/mlruns /opt/airflow/artifacts /tmp/artifacts &&
-        chmod -R 777 /opt/airflow/mlruns /opt/airflow/artifacts /tmp/artifacts
+        mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/keys /tmp/artifacts &&
+        chown -R ${AIRFLOW_UID}:0 /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/keys /tmp/artifacts &&
+        chmod -R 777 /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/keys /tmp/artifacts
     " || true
 done
 
@@ -105,20 +121,19 @@ docker compose exec webserver bash -c "
     echo "⚠️ Could not verify/create admin user automatically."
 }
 
-# ===== STEP 5.5: Sync .env → Airflow Variables (Phase 2 + Phase 3) =====
+# ===== STEP 5.5: Sync .env → Airflow Variables =====
 echo
 echo "📌 STEP 5.5: Syncing .env values to Airflow Variables..."
-ENV_VARS_P2=("MODEL_ALIAS" "PREDICTION_INPUT_PATH" "PREDICTION_OUTPUT_PATH" "STORAGE_BACKEND" "GCS_BUCKET")
-ENV_VARS_P3=("MODEL_NAME" "PROMOTE_FROM_ALIAS" "PROMOTE_TO_ALIAS" "PROMOTION_AUC_THRESHOLD" "PROMOTION_F1_THRESHOLD" "SLACK_WEBHOOK_URL" "ALERT_EMAILS")
+ENV_VARS_P2=("MODEL_ALIAS" "TRAIN_DATA_PATH" "PREDICTION_INPUT_PATH" "PREDICTION_OUTPUT_PATH" "STORAGE_BACKEND" "GCS_BUCKET")
+ENV_VARS_P3=("MODEL_NAME" "PROMOTE_FROM_ALIAS" "PROMOTE_TO_ALIAS" "PROMOTION_AUC_THRESHOLD" "PROMOTION_F1_THRESHOLD" "PROMOTION_TRIGGER_SOURCE" "PROMOTION_TRIGGERED_BY" "SLACK_WEBHOOK_URL" "ALERT_EMAILS")
 
 for var in "${ENV_VARS_P2[@]}" "${ENV_VARS_P3[@]}"; do
-    # Read raw value (keep everything after the first '=')
-    value="$(grep -E "^$var=" .env | sed -E "s/^$var=//")" || value=""
+    value="$(grep -E "^$var=" "$ENV_FILE" | sed -E "s/^$var=//")" || value=""
     if [ -n "${value:-}" ]; then
         docker compose exec webserver airflow variables set "$var" "$value" >/dev/null
         echo "   • Set Airflow Variable: $var=${value:0:80}${value:+$( [ ${#value} -gt 80 ] && echo '…' )}"
     else
-        echo "   • Skipped: $var (not set in .env)"
+        echo "   • Skipped: $var (not set in $ENV_FILE)"
     fi
 done
 echo "✅ Airflow Variables synced."
@@ -142,6 +157,7 @@ echo "✅ MLflow is running!"
 
 # ===== STEP 7: Done =====
 echo
-echo "🎉 All services are up!"
+echo "🎉 All core services are up!"
 echo "🌐 Airflow UI:  http://localhost:8080"
 echo "🌐 MLflow UI:   http://localhost:5000"
+echo "👉 Next: Train a model in Airflow, then run ./start_serve.sh to deploy it."

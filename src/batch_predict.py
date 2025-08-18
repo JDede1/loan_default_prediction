@@ -73,19 +73,22 @@ def main(args):
     print("✅ Model loaded successfully!")
 
     # ---------------------------
-    # 2. Load input data
+    # 2. Load input data (local or GCS)
     # ---------------------------
     print(f"\n📥 Reading batch input from: {args.input_path}")
-    ext = os.path.splitext(args.input_path)[-1].lower()
-
-    if ext == ".csv":
+    if args.input_path.startswith("gs://"):
+        # GCS input handled by pandas + gcsfs
         df = pd.read_csv(args.input_path)
-    elif ext == ".json":
-        df = pd.read_json(args.input_path)
-    elif ext == ".parquet":
-        df = pd.read_parquet(args.input_path)
     else:
-        raise ValueError("❌ Unsupported file format. Use CSV, JSON, or Parquet.")
+        ext = os.path.splitext(args.input_path)[-1].lower()
+        if ext == ".csv":
+            df = pd.read_csv(args.input_path)
+        elif ext == ".json":
+            df = pd.read_json(args.input_path)
+        elif ext == ".parquet":
+            df = pd.read_parquet(args.input_path)
+        else:
+            raise ValueError("❌ Unsupported file format. Use CSV, JSON, or Parquet.")
 
     print(f"📊 Input data shape: {df.shape}")
 
@@ -96,7 +99,7 @@ def main(args):
     preds = model.predict(df)
 
     # ---------------------------
-    # 4. Save predictions with timestamp (safe)
+    # 4. Save predictions with timestamp
     # ---------------------------
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     base_name = os.path.basename(args.output_path).replace(".csv", "")
@@ -107,21 +110,20 @@ def main(args):
     df_output["prediction"] = preds
     saved_path = safe_write_csv(df_output, final_output_path)
 
-    print(f"✅ Predictions saved to: {saved_path}")
+    print(f"✅ Predictions saved locally: {saved_path}")
 
     # ---------------------------
-    # 5. Optional: Upload to GCS
+    # 5. Upload to GCS (always if bucket is set)
     # ---------------------------
-    storage_backend = os.getenv("STORAGE_BACKEND", "local")
     gcs_bucket = os.getenv("GCS_BUCKET")
-
-    if storage_backend.lower() == "gcs" and gcs_bucket:
+    if gcs_bucket:
         gcs_destination = f"predictions/{os.path.basename(saved_path)}"
         upload_to_gcs(saved_path, gcs_bucket, gcs_destination)
         saved_path = f"gs://{gcs_bucket}/{gcs_destination}"
+        print(f"✅ Predictions also available in GCS: {saved_path}")
 
     # ---------------------------
-    # 6. Store latest prediction path in Airflow Variable (if running in Airflow)
+    # 6. Store latest prediction path in Airflow Variable
     # ---------------------------
     if Variable:
         try:
@@ -139,13 +141,20 @@ def main(args):
     print(f"📁 Final output file: {saved_path}")
     print(f"🕒 Timestamp: {datetime.now().isoformat()}")
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Batch prediction using MLflow model registry")
     parser.add_argument("--model_name", default="loan_default_model", help="Name of the registered MLflow model")
     parser.add_argument("--alias", default="staging", help="Model alias to load from registry")
-    parser.add_argument("--input_path", default="data/batch_input.csv", help="Path to input CSV, JSON, or Parquet file")
-    parser.add_argument("--output_path", default="artifacts/predictions.csv", help="Base path to save predictions (timestamp will be added)")
+    parser.add_argument(
+        "--input_path",
+        default=os.getenv("PREDICTION_INPUT_PATH", "data/batch_input.csv"),
+        help="Input file path (CSV, JSON, Parquet). Supports gs:// paths."
+    )
+    parser.add_argument(
+        "--output_path",
+        default=os.getenv("PREDICTION_OUTPUT_PATH", "artifacts/predictions.csv"),
+        help="Base path for output file (timestamp will be added)."
+    )
     args = parser.parse_args()
 
     main(args)

@@ -11,7 +11,7 @@ import json
 import os
 
 # -----------------------
-# Config
+# Defaults
 # -----------------------
 default_args = {
     "owner": "airflow",
@@ -19,17 +19,21 @@ default_args = {
     "retry_delay": timedelta(minutes=2),
 }
 
+# -----------------------
+# Config (Airflow Variables / .env)
+# -----------------------
 MODEL_NAME = Variable.get("MODEL_NAME", default_var=os.getenv("MODEL_NAME", "loan_default_model"))
 FROM_ALIAS = Variable.get("PROMOTE_FROM_ALIAS", default_var="staging")
 TO_ALIAS = Variable.get("PROMOTE_TO_ALIAS", default_var="production")
 
+# ✅ Standardize to MLflow server
 MLFLOW_TRACKING_URI = Variable.get(
     "MLFLOW_TRACKING_URI",
-    default_var=os.getenv("MLFLOW_TRACKING_URI", "file:///opt/airflow/mlruns")
+    default_var=os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"),
 )
 
-SLACK_WEBHOOK_URL = Variable.get("SLACK_WEBHOOK_URL", default_var="")
-ALERT_EMAILS = Variable.get("ALERT_EMAILS", default_var="")  # Comma-separated
+SLACK_WEBHOOK_URL = Variable.get("SLACK_WEBHOOK_URL", default_var=os.getenv("SLACK_WEBHOOK_URL", ""))
+ALERT_EMAILS = Variable.get("ALERT_EMAILS", default_var=os.getenv("ALERT_EMAILS", ""))
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 client = MlflowClient()
@@ -38,24 +42,23 @@ client = MlflowClient()
 # Core: promotion
 # -----------------------
 def promote_model(**context):
-    conf = context.get("dag_run").conf if context.get("dag_run") else {}
+    conf = context.get("dag_run").conf or {}
     model_name = conf.get("model_name", MODEL_NAME)
     from_alias = conf.get("from_alias", FROM_ALIAS).lower()
     to_alias = conf.get("to_alias", TO_ALIAS).lower()
     version_to_promote = conf.get("model_version", None)
 
-    # If no version passed, get latest from from_alias
     if not version_to_promote:
         try:
             alias_info = client.get_model_version_by_alias(model_name, from_alias)
             version_to_promote = alias_info.version
-            print(f"ℹ️ No version passed — using latest '{from_alias}' version: {version_to_promote}")
+            print(f"ℹ️ Using latest '{from_alias}' version: {version_to_promote}")
         except Exception as e:
             context["ti"].xcom_push(key="exception", value=str(e))
-            raise RuntimeError(f"❌ Could not find alias '{from_alias}' for model '{model_name}': {e}")
+            raise RuntimeError(f"❌ Could not resolve alias '{from_alias}' for model '{model_name}': {e}")
 
     try:
-        # Promote model by updating alias
+        # Promote alias
         client.set_registered_model_alias(
             name=model_name,
             alias=to_alias,
@@ -70,14 +73,14 @@ def promote_model(**context):
         client.set_model_version_tag(model_name, version_to_promote, "trigger_source", trigger_source)
         client.set_model_version_tag(model_name, version_to_promote, "triggered_by", triggered_by)
 
-        # XCom for downstream notifications
+        # Push XComs for downstream tasks
         ti = context["ti"]
         ti.xcom_push(key="promoted_model_name", value=model_name)
         ti.xcom_push(key="promoted_model_version", value=str(version_to_promote))
         ti.xcom_push(key="promoted_from_alias", value=from_alias)
         ti.xcom_push(key="promoted_to_alias", value=to_alias)
 
-        print(f"✅ Promoted '{model_name}' version {version_to_promote} from '{from_alias}' → '{to_alias}'.")
+        print(f"✅ Promoted '{model_name}' v{version_to_promote} from '{from_alias}' → '{to_alias}'.")
 
     except Exception as e:
         context["ti"].xcom_push(key="exception", value=str(e))
@@ -101,8 +104,9 @@ def _post_to_slack(text: str):
     except Exception as e:
         print(f"⚠️ Slack notification failed: {e}")
 
-def notify_slack_success(ti):
+def notify_slack_success(**context):
     try:
+        ti = context["ti"]
         model = ti.xcom_pull(key="promoted_model_name")
         version = ti.xcom_pull(key="promoted_model_version")
         from_alias = ti.xcom_pull(key="promoted_from_alias")
@@ -127,7 +131,7 @@ with DAG(
     dag_id="promote_model_dag",
     default_args=default_args,
     description="Promotes MLflow model from staging to production with alerts",
-    schedule_interval=None,
+    schedule_interval=None,  # only triggered, never scheduled
     start_date=datetime(2025, 8, 1),
     catchup=False,
     tags=["mlflow", "model", "promotion"],
@@ -136,14 +140,12 @@ with DAG(
     do_promotion = PythonOperator(
         task_id="promote_model_task",
         python_callable=promote_model,
-        provide_context=True,
-        on_failure_callback=notify_slack_failure,  # Failure notification won't stop DAG
+        on_failure_callback=notify_slack_failure,
     )
 
     slack_success = PythonOperator(
         task_id="slack_notify_success",
         python_callable=notify_slack_success,
-        provide_context=True,
         trigger_rule=TriggerRule.ALL_SUCCESS,
     )
 
