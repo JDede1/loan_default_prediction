@@ -33,11 +33,21 @@ airflow/scheduler/
 airflow/mlruns/
 airflow/artifacts/
 
+# Runtime logs and pids (root-level Airflow dir)
+logs/
+airflow-logs/
+*.pid
+
 # ==========================
 # MLflow Local Tracking Data
 # ==========================
 mlruns/
 artifacts/
+
+# ==========================
+# GCS Local Mirror
+# ==========================
+gs/
 
 # ==========================
 # Data Files
@@ -75,3 +85,16 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# ==========================
+# Terraform
+# ==========================
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# ==========================
+# Docker / Compose cache
+# ==========================
+.compose_hash
+.monitor_hash
