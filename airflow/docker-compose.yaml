@@ -52,10 +52,11 @@ services:
       - ./:/opt/airflow
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
+      - ../tests:/opt/airflow/tests
+      - ../pytest.ini:/opt/airflow/pytest.ini:ro     # ✅ mount pytest.ini
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
       - airflow-logs:/home/airflow/logs
-      # === GCP service account key ===
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     depends_on:
       postgres:
@@ -89,11 +90,12 @@ services:
       - ./:/opt/airflow
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
+      - ../tests:/opt/airflow/tests
+      - ../pytest.ini:/opt/airflow/pytest.ini:ro     # ✅ mount pytest.ini
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
       - airflow-logs:/home/airflow/logs
       - /var/run/docker.sock:/var/run/docker.sock
-      # === GCP service account key ===
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     depends_on:
       postgres:
@@ -129,11 +131,12 @@ services:
       - ./:/opt/airflow
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
+      - ../tests:/opt/airflow/tests
+      - ../pytest.ini:/opt/airflow/pytest.ini:ro     # ✅ mount pytest.ini
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
       - airflow-logs:/home/airflow/logs
       - /var/run/docker.sock:/var/run/docker.sock
-      # === GCP service account key ===
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     depends_on:
       postgres:
@@ -143,14 +146,14 @@ services:
     restart: always
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v3.1.4   # ✅ upgraded to match serve
+    image: ghcr.io/mlflow/mlflow:v3.1.4
     platform: linux/amd64
     container_name: mlflow
     user: "${AIRFLOW_UID:-50000}:0"
     ports:
       - "5000:5000"
     volumes:
-      - mlflow-runs:/opt/airflow/mlruns   # backend store (experiment metadata)
+      - mlflow-runs:/opt/airflow/mlruns
     command: >
       mlflow server 
       --backend-store-uri file:/opt/airflow/mlruns
@@ -177,7 +180,7 @@ services:
       mlflow models serve -m "models:/loan_default_model@staging"
       --host 0.0.0.0 --port 5001 --no-conda
     depends_on:
-      - mlflow     # ✅ ensure mlflow is started first
+      - mlflow
     networks:
       - airflow
       

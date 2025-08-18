@@ -37,7 +37,10 @@ terraform-destroy:
 # === Integration Tests (run inside webserver container) ===
 integration-tests:
 	docker compose -f airflow/docker-compose.yaml run --rm \
+		--workdir /opt/airflow \
+		--entrypoint "" \
+		-e PYTHONPATH=/opt/airflow \
 		-e RUN_INTEGRATION_TESTS=1 \
 		-e MLFLOW_TRACKING_URI=http://mlflow:5000 \
 		-e GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json \
-		webserver pytest -m integration -v
+		webserver pytest tests -m integration -v
