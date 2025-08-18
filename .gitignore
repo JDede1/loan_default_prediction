@@ -32,6 +32,7 @@ airflow/dag_processor_manager/
 airflow/scheduler/
 airflow/mlruns/
 airflow/artifacts/
+airflow/gs:/        # prevent accidental gs:// folder copies
 
 # Runtime logs and pids (root-level Airflow dir)
 logs/
