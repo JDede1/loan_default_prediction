@@ -34,43 +34,57 @@ This project demonstrates the full MLOps lifecycle:
 
 ## 🏗️ Architecture & Tools
 
+Got you. Two issues to fix:
+
+1. Mermaid code blocks can’t have extra prose inside them (that “I think this is the area…” line breaks parsing).
+2. GitHub’s Mermaid renderer can be finicky with emojis inside node labels/subgraph titles.
+
+Also: GitHub’s Mermaid diagrams are static—no animations.
+
+Here’s a drop-in replacement for your README.
+
 ### High-Level Workflow
 
 ```mermaid
 flowchart LR
-    Data[📊 Data] --> Training[🧠 Training]
-    Training --> Registry[📦 MLflow Registry]
-    Registry --> Serving[🚀 Serving API]
-    Serving --> Prediction[📈 Batch Predictions]
-    Prediction --> Monitoring[🛡️ Drift Detection]
+    D[Data] --> T[Training]
+    T --> R[MLflow Registry]
+    R --> S[Serving API]
+    S --> P[Batch Predictions]
+    P --> M[Drift Detection]
 ```
 
 ### Detailed Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Data["📊 GCS Data"]
+    subgraph Data["GCS Data"]
         A[loan_default_selected_features_clean.csv]
         B[batch_input.csv]
     end
-    subgraph Training["🧠 Training DAG"]
+
+    subgraph Training["Training DAG"]
         A --> T1[train_with_mlflow.py]
         T1 --> MLflow[(MLflow Tracking & Registry)]
         T1 --> Artifacts[(GCS Artifacts)]
     end
-    subgraph Registry["📦 MLflow Registry"]
+
+    subgraph Registry["MLflow Registry"]
         MLflow --> Staging[(Staging Alias)]
-        MLflow --> Prod[(Production Alias)]
+        MLflow --> Production[(Production Alias)]
     end
-    subgraph Serving["🚀 Model Serving"]
+
+    subgraph Serving["Model Serving"]
         Staging --> API[MLflow REST API (Docker)]
     end
-    subgraph Batch["📈 Batch Prediction DAG"]
+
+    subgraph Batch["Batch Prediction DAG"]
         B --> P1[batch_predict.py]
         P1 --> Predictions[(Predictions in GCS)]
         Predictions --> Marker[latest_prediction.txt]
     end
-    subgraph Monitoring["🛡️ Monitoring DAG"]
+
+    subgraph Monitoring["Monitoring DAG"]
         Marker --> M1[monitor_predictions.py (Evidently)]
         A --> M1
         M1 --> Reports[(Reports in GCS)]
@@ -251,8 +265,6 @@ curl -X POST http://localhost:5001/invocations \
 # 7. Stop services
 make stop
 ```
-
----
 ---
 
 ## 🐛 Known Issues & Troubleshooting
@@ -273,7 +285,6 @@ Even with Dockerized reproducibility, some common issues may appear. Below are q
   ```bash
   make start
   ```
-
 ---
 
 ### 2. **MLflow registry not accessible**
@@ -368,10 +379,10 @@ make start
 
 ---
 
----
+## 🙏 **Acknowledgements**
 
-🙏 **Acknowledgements**
 Developed as part of **DataTalksClub MLOps Zoomcamp**.
+
 Thanks to the instructors, mentors, and community for guidance and feedback.
 
 ---
