@@ -250,6 +250,7 @@ make stop
 ## 🙏 Acknowledgments
 
 Developed as part of **DataTalksClub MLOps Zoomcamp**.
+
 Thanks to the instructors, mentors, and community for guidance and feedback.
 
 ---
