@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Loan Default Prediction Architecture</title>
+    <script type="module">
+        import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: "default",
+            securityLevel: "loose",
+            flowchart: { useMaxWidth: true, htmlLabels: true }
+        });
+    </script>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #f9f9f9;
+            padding: 20px;
+        }
+
+        .mermaid {
+            text-align: center;
+        }
+
+        /* Animation: make arrows and nodes pulse */
+        .mermaid svg path {
+            stroke-dasharray: 6;
+            animation: dash 2s linear infinite;
+        }
+
+        .mermaid svg rect,
+        .mermaid svg polygon {
+            animation: pulse 3s ease-in-out infinite;
+        }
+
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -12;
+            }
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.6;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Loan Default Prediction – Architecture</h1>
+
+    <div class="mermaid">
+        flowchart LR
+        Data[📊 Data] --> Training[🧠 Training]
+        Training --> Registry[📦 MLflow Registry]
+        Registry --> Serving[🚀 Serving API]
+        Serving --> Prediction[📈 Batch Predictions]
+        Prediction --> Monitoring[🛡️ Drift Detection]
+    </div>
+</body>
+
+</html>
