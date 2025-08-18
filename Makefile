@@ -1,4 +1,4 @@
-.PHONY: install lint format test start stop terraform-init terraform-plan terraform-apply terraform-destroy
+.PHONY: install lint format test start stop terraform-init terraform-plan terraform-apply terraform-destroy integration-tests
 
 # === Python/Dev Setup ===
 install:
@@ -34,3 +34,10 @@ terraform-apply:
 terraform-destroy:
 	docker compose -f airflow/docker-compose.yaml run --rm terraform "terraform destroy -auto-approve"
 
+# === Integration Tests (run inside webserver container) ===
+integration-tests:
+	docker compose -f airflow/docker-compose.yaml run --rm \
+		-e RUN_INTEGRATION_TESTS=1 \
+		-e MLFLOW_TRACKING_URI=http://mlflow:5000 \
+		-e GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json \
+		webserver pytest -m integration -v
