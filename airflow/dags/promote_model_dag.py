@@ -22,7 +22,9 @@ default_args = {
 # -----------------------
 # Config (Airflow Variables / .env)
 # -----------------------
-MODEL_NAME = Variable.get("MODEL_NAME", default_var=os.getenv("MODEL_NAME", "loan_default_model"))
+MODEL_NAME = Variable.get(
+    "MODEL_NAME", default_var=os.getenv("MODEL_NAME", "loan_default_model")
+)
 FROM_ALIAS = Variable.get("PROMOTE_FROM_ALIAS", default_var="staging")
 TO_ALIAS = Variable.get("PROMOTE_TO_ALIAS", default_var="production")
 
@@ -32,11 +34,14 @@ MLFLOW_TRACKING_URI = Variable.get(
     default_var=os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"),
 )
 
-SLACK_WEBHOOK_URL = Variable.get("SLACK_WEBHOOK_URL", default_var=os.getenv("SLACK_WEBHOOK_URL", ""))
+SLACK_WEBHOOK_URL = Variable.get(
+    "SLACK_WEBHOOK_URL", default_var=os.getenv("SLACK_WEBHOOK_URL", "")
+)
 ALERT_EMAILS = Variable.get("ALERT_EMAILS", default_var=os.getenv("ALERT_EMAILS", ""))
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 client = MlflowClient()
+
 
 # -----------------------
 # Core: promotion
@@ -55,7 +60,9 @@ def promote_model(**context):
             print(f"ℹ️ Using latest '{from_alias}' version: {version_to_promote}")
         except Exception as e:
             context["ti"].xcom_push(key="exception", value=str(e))
-            raise RuntimeError(f"❌ Could not resolve alias '{from_alias}' for model '{model_name}': {e}")
+            raise RuntimeError(
+                f"❌ Could not resolve alias '{from_alias}' for model '{model_name}': {e}"
+            )
 
     try:
         # Promote alias
@@ -68,10 +75,18 @@ def promote_model(**context):
         # Audit tags
         trigger_source = conf.get("trigger_source", "Airflow DAG")
         triggered_by = conf.get("triggered_by", "automated_rule")
-        client.set_model_version_tag(model_name, version_to_promote, "promoted_from", from_alias)
-        client.set_model_version_tag(model_name, version_to_promote, "promoted_to", to_alias)
-        client.set_model_version_tag(model_name, version_to_promote, "trigger_source", trigger_source)
-        client.set_model_version_tag(model_name, version_to_promote, "triggered_by", triggered_by)
+        client.set_model_version_tag(
+            model_name, version_to_promote, "promoted_from", from_alias
+        )
+        client.set_model_version_tag(
+            model_name, version_to_promote, "promoted_to", to_alias
+        )
+        client.set_model_version_tag(
+            model_name, version_to_promote, "trigger_source", trigger_source
+        )
+        client.set_model_version_tag(
+            model_name, version_to_promote, "triggered_by", triggered_by
+        )
 
         # Push XComs for downstream tasks
         ti = context["ti"]
@@ -80,11 +95,14 @@ def promote_model(**context):
         ti.xcom_push(key="promoted_from_alias", value=from_alias)
         ti.xcom_push(key="promoted_to_alias", value=to_alias)
 
-        print(f"✅ Promoted '{model_name}' v{version_to_promote} from '{from_alias}' → '{to_alias}'.")
+        print(
+            f"✅ Promoted '{model_name}' v{version_to_promote} from '{from_alias}' → '{to_alias}'."
+        )
 
     except Exception as e:
         context["ti"].xcom_push(key="exception", value=str(e))
         raise
+
 
 # -----------------------
 # Slack helpers
@@ -104,6 +122,7 @@ def _post_to_slack(text: str):
     except Exception as e:
         print(f"⚠️ Slack notification failed: {e}")
 
+
 def notify_slack_success(**context):
     try:
         ti = context["ti"]
@@ -111,18 +130,26 @@ def notify_slack_success(**context):
         version = ti.xcom_pull(key="promoted_model_version")
         from_alias = ti.xcom_pull(key="promoted_from_alias")
         to_alias = ti.xcom_pull(key="promoted_to_alias")
-        _post_to_slack(f"✅ *Model promoted*: `{model}` v{version} from `{from_alias}` → `{to_alias}`")
+        _post_to_slack(
+            f"✅ *Model promoted*: `{model}` v{version} from `{from_alias}` → `{to_alias}`"
+        )
     except Exception as e:
         print(f"⚠️ Slack success notification failed: {e}")
+
 
 def notify_slack_failure(context):
     try:
         dag_id = context.get("dag").dag_id if context.get("dag") else ""
-        task_id = context.get("task_instance").task_id if context.get("task_instance") else ""
+        task_id = (
+            context.get("task_instance").task_id if context.get("task_instance") else ""
+        )
         err = context.get("exception", "")
-        _post_to_slack(f"❌ *Promotion failed* in DAG `{dag_id}`, task `{task_id}`:\n```{err}```")
+        _post_to_slack(
+            f"❌ *Promotion failed* in DAG `{dag_id}`, task `{task_id}`:\n```{err}```"
+        )
     except Exception as e:
         print(f"⚠️ Slack failure notification failed: {e}")
+
 
 # -----------------------
 # DAG

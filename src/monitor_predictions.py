@@ -111,9 +111,7 @@ def main(args):
         # Try Airflow Variable first
         if Variable:
             try:
-                prediction_path = Variable.get(
-                    "LATEST_PREDICTION_PATH", default_var=""
-                )
+                prediction_path = Variable.get("LATEST_PREDICTION_PATH", default_var="")
             except Exception:
                 prediction_path = ""
         if not prediction_path:
@@ -132,12 +130,8 @@ def main(args):
 
     # Unique filenames per run
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    report_json_path = os.path.join(
-        ARTIFACT_DIR, f"monitoring_report_{timestamp}.json"
-    )
-    report_html_path = os.path.join(
-        ARTIFACT_DIR, f"monitoring_report_{timestamp}.html"
-    )
+    report_json_path = os.path.join(ARTIFACT_DIR, f"monitoring_report_{timestamp}.json")
+    report_html_path = os.path.join(ARTIFACT_DIR, f"monitoring_report_{timestamp}.html")
 
     # 1) Load training (reference) data
     print("📦 Loading training (reference) data...")

@@ -33,13 +33,11 @@ def test_prediction_service():
     for attempt in range(max_retries):
         try:
             response = requests.post(url, headers=headers, json=data, timeout=10)
-            assert response.status_code == 200, (
-                f"Non-200 response: {response.text}"
-            )
+            assert response.status_code == 200, f"Non-200 response: {response.text}"
             result = response.json()
-            assert "predictions" in result, (
-                f"Missing 'predictions' in response: {result}"
-            )
+            assert (
+                "predictions" in result
+            ), f"Missing 'predictions' in response: {result}"
             return  # ✅ success, exit test
         except Exception as e:
             last_err = e

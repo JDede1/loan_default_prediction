@@ -21,7 +21,9 @@ TRAIN_DATA_PATH = os.getenv(
 )
 
 # ✅ Marker file created by batch_prediction_dag
-LATEST_MARKER_PATH = "gs://loan-default-artifacts-loan-default-mlops/predictions/latest_prediction.txt"
+LATEST_MARKER_PATH = (
+    "gs://loan-default-artifacts-loan-default-mlops/predictions/latest_prediction.txt"
+)
 
 # -----------------------
 # DAG Definition
@@ -62,12 +64,16 @@ with DAG(
                 "GOOGLE_APPLICATION_CREDENTIALS",
                 "/opt/airflow/keys/gcs-service-account.json",
             ),
-            "MLFLOW_TRACKING_URI": os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"),
+            "MLFLOW_TRACKING_URI": os.getenv(
+                "MLFLOW_TRACKING_URI", "http://mlflow:5000"
+            ),
             "MLFLOW_ARTIFACT_URI": os.getenv(
                 "MLFLOW_ARTIFACT_URI",
                 f"gs://{os.getenv('GCS_BUCKET', 'loan-default-artifacts-loan-default-mlops')}/mlflow",
             ),
-            "GCS_BUCKET": os.getenv("GCS_BUCKET", "loan-default-artifacts-loan-default-mlops"),
+            "GCS_BUCKET": os.getenv(
+                "GCS_BUCKET", "loan-default-artifacts-loan-default-mlops"
+            ),
             "TRAIN_DATA_PATH": TRAIN_DATA_PATH,
         },
     )
