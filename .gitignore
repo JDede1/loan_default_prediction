@@ -99,3 +99,7 @@ Thumbs.db
 # ==========================
 .compose_hash
 .monitor_hash
+
+# Prediction outputs
+predictions_*.csv
+
