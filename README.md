@@ -34,24 +34,21 @@ This project demonstrates the full MLOps lifecycle:
 
 ## 🏗️ Architecture & Tools
 
-Got you. Two issues to fix:
+📊 For an **interactive animated view** of the architecture diagrams, open:
 
-1. Mermaid code blocks can’t have extra prose inside them (that “I think this is the area…” line breaks parsing).
-2. GitHub’s Mermaid renderer can be finicky with emojis inside node labels/subgraph titles.
+➡️ [architecture.html](./architecture.html)
 
-Also: GitHub’s Mermaid diagrams are static—no animations.
-
-Here’s a drop-in replacement for your README.
+---
 
 ### High-Level Workflow
 
 ```mermaid
 flowchart LR
-    D[Data] --> T[Training]
-    T --> R[MLflow Registry]
-    R --> S[Serving API]
-    S --> P[Batch Predictions]
-    P --> M[Drift Detection]
+    D[📊 Data] --> T[🧠 Training]
+    T --> R[📦 MLflow Registry]
+    R --> S[🚀 Serving API]
+    S --> P[📈 Batch Predictions]
+    P --> M[🛡️ Drift Detection]
 ```
 
 ### Detailed Architecture
@@ -386,3 +383,4 @@ Developed as part of **DataTalksClub MLOps Zoomcamp**.
 Thanks to the instructors, mentors, and community for guidance and feedback.
 
 ---
+
