@@ -1,9 +1,10 @@
 import argparse
-import pandas as pd
-import mlflow.pyfunc
 import os
 import shutil
 from datetime import datetime
+
+import mlflow.pyfunc
+import pandas as pd
 
 # Phase 2 imports
 try:
@@ -24,6 +25,7 @@ TMP_ARTIFACT_DIR = "/tmp/artifacts"  # Always writable
 os.makedirs(ARTIFACT_DIR, exist_ok=True)
 os.makedirs(TMP_ARTIFACT_DIR, exist_ok=True)
 
+
 # -----------------------
 # Safe file write helper
 # -----------------------
@@ -43,6 +45,7 @@ def safe_write_csv(df: pd.DataFrame, final_path: str) -> str:
         print(f"⚠️ Permission denied writing to {final_path}, using tmp instead.")
         return tmp_path
 
+
 # -----------------------
 # GCS Upload helper
 # -----------------------
@@ -53,6 +56,7 @@ def upload_to_gcs(local_path: str, bucket_name: str, destination_blob: str):
     blob = bucket.blob(destination_blob)
     blob.upload_from_filename(local_path)
     print("✅ Upload complete.")
+
 
 # -----------------------
 # Main
@@ -141,19 +145,28 @@ def main(args):
     print(f"📁 Final output file: {saved_path}")
     print(f"🕒 Timestamp: {datetime.now().isoformat()}")
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Batch prediction using MLflow model registry")
-    parser.add_argument("--model_name", default="loan_default_model", help="Name of the registered MLflow model")
-    parser.add_argument("--alias", default="staging", help="Model alias to load from registry")
+    parser = argparse.ArgumentParser(
+        description="Batch prediction using MLflow model registry"
+    )
+    parser.add_argument(
+        "--model_name",
+        default="loan_default_model",
+        help="Name of the registered MLflow model",
+    )
+    parser.add_argument(
+        "--alias", default="staging", help="Model alias to load from registry"
+    )
     parser.add_argument(
         "--input_path",
         default=os.getenv("PREDICTION_INPUT_PATH", "data/batch_input.csv"),
-        help="Input file path (CSV, JSON, Parquet). Supports gs:// paths."
+        help="Input file path (CSV, JSON, Parquet). Supports gs:// paths.",
     )
     parser.add_argument(
         "--output_path",
         default=os.getenv("PREDICTION_OUTPUT_PATH", "artifacts/predictions.csv"),
-        help="Base path for output file (timestamp will be added)."
+        help="Base path for output file (timestamp will be added).",
     )
     args = parser.parse_args()
 

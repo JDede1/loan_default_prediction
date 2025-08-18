@@ -1,19 +1,24 @@
-import os
-import shutil
 import argparse
 import json
-import pandas as pd
-import numpy as np
+import os
+import shutil
+
 import matplotlib.pyplot as plt
 import mlflow
-from mlflow.tracking import MlflowClient
+import numpy as np
+import pandas as pd
 from mlflow.models.signature import infer_signature
-
-from sklearn.model_selection import train_test_split
+from mlflow.tracking import MlflowClient
 from sklearn.metrics import (
-    roc_auc_score, f1_score, precision_score, recall_score,
-    roc_curve, confusion_matrix, ConfusionMatrixDisplay
+    ConfusionMatrixDisplay,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+    roc_curve,
 )
+from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
 
 # -----------------------
@@ -30,15 +35,20 @@ os.makedirs(TMP_ARTIFACT_DIR, exist_ok=True)
 # -----------------------
 # MLflow Configuration
 # -----------------------
-mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI", f"file://{os.path.join(BASE_DIR, 'mlruns')}"))
+mlflow.set_tracking_uri(
+    os.getenv("MLFLOW_TRACKING_URI", f"file://{os.path.join(BASE_DIR, 'mlruns')}")
+)
 EXPERIMENT_NAME = "loan_default_experiment"
 client = MlflowClient()
 
 experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
 if experiment is None:
-    experiment_id = client.create_experiment(EXPERIMENT_NAME, artifact_location=os.getenv("MLFLOW_ARTIFACT_URI"))
+    experiment_id = client.create_experiment(
+        EXPERIMENT_NAME, artifact_location=os.getenv("MLFLOW_ARTIFACT_URI")
+    )
 else:
     experiment_id = experiment.experiment_id
+
 
 # -----------------------
 # Load and Split Data
@@ -52,7 +62,11 @@ def load_data(path: str):
     df = pd.read_csv(path)  # gcsfs enables pd.read_csv(gs://...) automatically
     X = df.drop("loan_status", axis=1)
     y = df["loan_status"]
-    return train_test_split(X, y, test_size=0.2, stratify=y, random_state=42), df.columns[:-1]
+    return (
+        train_test_split(X, y, test_size=0.2, stratify=y, random_state=42),
+        df.columns[:-1],
+    )
+
 
 # -----------------------
 # Train Model
@@ -73,6 +87,7 @@ def train_xgboost(X_train, y_train, custom_params=None):
     model.fit(X_train, y_train)
     return model, base_params
 
+
 # -----------------------
 # Evaluate Model
 # -----------------------
@@ -85,6 +100,7 @@ def evaluate_model(model, X_test, y_test):
         "Precision": precision_score(y_test, y_pred),
         "Recall": recall_score(y_test, y_pred),
     }
+
 
 # -----------------------
 # Save Visuals (safe write)
@@ -101,6 +117,7 @@ def save_plot_safely(fig, filename):
         print(f"⚠️ Permission denied writing {filename}. Using temp file instead.")
         return tmp_path
 
+
 def save_feature_importance_plot(model, feature_names, filename):
     importances = model.feature_importances_
     sorted_idx = np.argsort(importances)[::-1][:10]
@@ -113,6 +130,7 @@ def save_feature_importance_plot(model, feature_names, filename):
     ax.set_title("Top 10 Feature Importances")
     plt.tight_layout()
     return save_plot_safely(fig, filename)
+
 
 def save_roc_curve_plot(y_test, y_proba, filename):
     fpr, tpr, _ = roc_curve(y_test, y_proba)
@@ -129,6 +147,7 @@ def save_roc_curve_plot(y_test, y_proba, filename):
     plt.tight_layout()
     return save_plot_safely(fig, filename)
 
+
 def save_confusion_matrix_plot(y_test, y_pred, filename):
     cm = confusion_matrix(y_test, y_pred)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm)
@@ -137,6 +156,7 @@ def save_confusion_matrix_plot(y_test, y_pred, filename):
     ax.set_title("Confusion Matrix")
     plt.tight_layout()
     return save_plot_safely(fig, filename)
+
 
 # -----------------------
 # Log Everything to MLflow
@@ -175,7 +195,9 @@ def log_and_register_model(
         if feature_names is not None:
             plot_paths.append(
                 save_feature_importance_plot(
-                    model, feature_names, os.path.join(ARTIFACT_DIR, "feature_importance.png")
+                    model,
+                    feature_names,
+                    os.path.join(ARTIFACT_DIR, "feature_importance.png"),
                 )
             )
 
@@ -183,10 +205,14 @@ def log_and_register_model(
         y_proba = model.predict_proba(X_test)[:, 1]
 
         plot_paths.append(
-            save_roc_curve_plot(y_test, y_proba, os.path.join(ARTIFACT_DIR, "roc_curve.png"))
+            save_roc_curve_plot(
+                y_test, y_proba, os.path.join(ARTIFACT_DIR, "roc_curve.png")
+            )
         )
         plot_paths.append(
-            save_confusion_matrix_plot(y_test, y_pred, os.path.join(ARTIFACT_DIR, "confusion_matrix.png"))
+            save_confusion_matrix_plot(
+                y_test, y_pred, os.path.join(ARTIFACT_DIR, "confusion_matrix.png")
+            )
         )
 
         # Log whichever plots exist (even if only in tmp)
@@ -212,6 +238,7 @@ def log_and_register_model(
             print(f"Assigned alias '{alias}' to version {model_details.version}")
 
         print(f"Registered model '{model_name}' as version {model_details.version}")
+
 
 # -----------------------
 # CLI Entry Point
@@ -241,6 +268,7 @@ def main(args):
         feature_names=feature_names,
         experiment_id=experiment_id,
     )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

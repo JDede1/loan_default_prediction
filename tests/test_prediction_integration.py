@@ -1,13 +1,15 @@
-import os
 import json
+import os
 import time
+
 import pytest
 import requests
+
 
 @pytest.mark.integration
 @pytest.mark.skipif(
     not os.getenv("RUN_INTEGRATION_TESTS"),
-    reason="Integration test skipped: RUN_INTEGRATION_TESTS not set"
+    reason="Integration test skipped: RUN_INTEGRATION_TESTS not set",
 )
 def test_prediction_service():
     """
@@ -31,12 +33,19 @@ def test_prediction_service():
     for attempt in range(max_retries):
         try:
             response = requests.post(url, headers=headers, json=data, timeout=10)
-            assert response.status_code == 200, f"Non-200 response: {response.text}"
+            assert response.status_code == 200, (
+                f"Non-200 response: {response.text}"
+            )
             result = response.json()
-            assert "predictions" in result, f"Missing 'predictions' in response: {result}"
+            assert "predictions" in result, (
+                f"Missing 'predictions' in response: {result}"
+            )
             return  # ✅ success, exit test
         except Exception as e:
             last_err = e
             time.sleep(5)  # wait before retry
 
-    pytest.fail(f"Prediction service test failed after {max_retries} retries. Last error: {last_err}")
+    pytest.fail(
+        f"Prediction service test failed after {max_retries} retries. "
+        f"Last error: {last_err}"
+    )

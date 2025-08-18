@@ -32,10 +32,6 @@ This project demonstrates the full MLOps lifecycle:
 ---
 
 ## 🏗️ Architecture & Tools
-
-📊 For an **interactive animated version** of the architecture, open:  
-➡️ [architecture.html](./architecture.html)
-
 ---
 
 ### High-Level Workflow

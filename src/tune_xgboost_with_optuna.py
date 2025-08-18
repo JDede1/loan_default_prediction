@@ -1,11 +1,13 @@
-import os
 import argparse
 import json
-import pandas as pd
+import os
+
 import optuna
-from sklearn.model_selection import train_test_split
+import pandas as pd
 from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
+
 
 # -----------------------
 # Load Data
@@ -17,6 +19,7 @@ def load_data(path: str):
     X = df.drop("loan_status", axis=1)
     y = df["loan_status"]
     return train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+
 
 # -----------------------
 # Objective Function
@@ -51,6 +54,7 @@ def make_objective(data_path: str):
 
     return objective
 
+
 # -----------------------
 # Main
 # -----------------------
@@ -64,7 +68,9 @@ if __name__ == "__main__":
         ),
         help="Path to training data (CSV). Supports gs:// paths if gcsfs is installed.",
     )
-    parser.add_argument("--trials", type=int, default=25, help="Number of Optuna trials")
+    parser.add_argument(
+        "--trials", type=int, default=25, help="Number of Optuna trials"
+    )
     parser.add_argument(
         "--output_params",
         default=os.getenv("BEST_PARAMS_PATH", "artifacts/best_xgb_params.json"),

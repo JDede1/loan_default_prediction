@@ -1,15 +1,16 @@
-import pandas as pd
 import argparse
 import os
-import joblib
 
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score
-from sklearn.linear_model import LogisticRegression
+import joblib
+import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
+from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
+
 
 # ------------------------
 # 1. Load and Split Data
@@ -20,6 +21,7 @@ def load_data(data_path):
     y = df["loan_status"]
     return train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
 
+
 # ------------------------
 # 2. Select Model
 # ------------------------
@@ -28,20 +30,30 @@ def get_model(model_name, y_train):
         return XGBClassifier(
             eval_metric="logloss",
             scale_pos_weight=(y_train == 0).sum() / (y_train == 1).sum(),
-            random_state=42
+            random_state=42,
         )
 
     elif model_name == "logreg":
-        return Pipeline([
-            ("scaler", StandardScaler()),
-            ("clf", LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42))
-        ])
+        return Pipeline(
+            [
+                ("scaler", StandardScaler()),
+                (
+                    "clf",
+                    LogisticRegression(
+                        max_iter=1000, class_weight="balanced", random_state=42
+                    ),
+                ),
+            ]
+        )
 
     elif model_name == "random_forest":
-        return RandomForestClassifier(n_estimators=100, class_weight="balanced", random_state=42, n_jobs=-1)
+        return RandomForestClassifier(
+            n_estimators=100, class_weight="balanced", random_state=42, n_jobs=-1
+        )
 
     else:
         raise ValueError(f"Unsupported model: {model_name}")
+
 
 # ------------------------
 # 3. Evaluate Model
@@ -54,8 +66,9 @@ def evaluate_model(model, X_test, y_test):
         "AUC": roc_auc_score(y_test, y_proba),
         "F1": f1_score(y_test, y_pred),
         "Precision": precision_score(y_test, y_pred),
-        "Recall": recall_score(y_test, y_pred)
+        "Recall": recall_score(y_test, y_pred),
     }
+
 
 # ------------------------
 # 4. Main Script
@@ -84,26 +97,25 @@ def main(args):
     metrics_df.to_csv(metrics_file, index=False)
     print(f"Metrics saved to: {metrics_file}")
 
+
 # ------------------------
 # 5. Entry Point
 # ------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--data_path", 
-        default="data/loan_default_selected_features_clean.csv", 
-        help="Path to input CSV file"
+        "--data_path",
+        default="data/loan_default_selected_features_clean.csv",
+        help="Path to input CSV file",
     )
     parser.add_argument(
-        "--model", 
-        default="xgboost", 
-        choices=["xgboost", "logreg", "random_forest"], 
-        help="Model to train"
+        "--model",
+        default="xgboost",
+        choices=["xgboost", "logreg", "random_forest"],
+        help="Model to train",
     )
     parser.add_argument(
-        "--output_path", 
-        default="models", 
-        help="Directory to save model and metrics"
+        "--output_path", default="models", help="Directory to save model and metrics"
     )
     args = parser.parse_args()
 

@@ -1,14 +1,14 @@
-import os
+import argparse
 import json
+import os
 import shutil
-import pandas as pd
 from datetime import datetime
 from typing import List
-import argparse
 
-from evidently.report import Report
+import pandas as pd
 from evidently.metric_preset import DataDriftPreset, TargetDriftPreset
 from evidently.pipeline.column_mapping import ColumnMapping
+from evidently.report import Report
 
 # Phase 2 imports
 try:
@@ -17,7 +17,6 @@ except ImportError:
     Variable = None  # Allow running outside Airflow
 
 from google.cloud import storage
-
 
 # =========================
 # Paths & constants
@@ -35,7 +34,9 @@ os.makedirs(TMP_ARTIFACT_DIR, exist_ok=True)
 # Helpers
 # =========================
 def list_prediction_files(directories: List[str]) -> List[str]:
-    """Return a sorted (newest-first) list of predictions_*.csv across given directories."""
+    """Return a sorted (newest-first) list of predictions_*.csv across given
+    directories.
+    """
     found = []
     for d in directories:
         try:
@@ -52,7 +53,8 @@ def get_latest_prediction_file() -> str:
     candidates = list_prediction_files([ARTIFACT_DIR, TMP_ARTIFACT_DIR])
     if not candidates:
         raise FileNotFoundError(
-            f"❌ No batch prediction files found in {ARTIFACT_DIR} or {TMP_ARTIFACT_DIR}."
+            "❌ No batch prediction files found in "
+            f"{ARTIFACT_DIR} or {TMP_ARTIFACT_DIR}."
         )
     latest = candidates[0]
     print(f"✅ Using latest batch predictions: {latest}")
@@ -69,7 +71,10 @@ def safe_write_bytes(path: str, data: bytes) -> str:
         shutil.copy2(tmp_name, path)
         return path
     except PermissionError:
-        print(f"⚠️ Permission denied writing directly to {path}. Keeping in tmp: {tmp_name}")
+        print(
+            "⚠️ Permission denied writing directly to "
+            f"{path}. Keeping in tmp: {tmp_name}"
+        )
         return tmp_name
 
 
@@ -106,7 +111,9 @@ def main(args):
         # Try Airflow Variable first
         if Variable:
             try:
-                prediction_path = Variable.get("LATEST_PREDICTION_PATH", default_var="")
+                prediction_path = Variable.get(
+                    "LATEST_PREDICTION_PATH", default_var=""
+                )
             except Exception:
                 prediction_path = ""
         if not prediction_path:
@@ -115,8 +122,9 @@ def main(args):
 
     if not train_data_path or not prediction_path:
         raise ValueError(
-            f"❌ Both TRAIN_DATA_PATH and PREDICTION_PATH must be provided. "
-            f"Got TRAIN_DATA_PATH={train_data_path}, PREDICTION_PATH={prediction_path}"
+            "❌ Both TRAIN_DATA_PATH and PREDICTION_PATH must be provided. "
+            f"Got TRAIN_DATA_PATH={train_data_path}, "
+            f"PREDICTION_PATH={prediction_path}"
         )
 
     print(f"📌 TRAIN_DATA_PATH={train_data_path}")
@@ -124,8 +132,12 @@ def main(args):
 
     # Unique filenames per run
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    report_json_path = os.path.join(ARTIFACT_DIR, f"monitoring_report_{timestamp}.json")
-    report_html_path = os.path.join(ARTIFACT_DIR, f"monitoring_report_{timestamp}.html")
+    report_json_path = os.path.join(
+        ARTIFACT_DIR, f"monitoring_report_{timestamp}.json"
+    )
+    report_html_path = os.path.join(
+        ARTIFACT_DIR, f"monitoring_report_{timestamp}.html"
+    )
 
     # 1) Load training (reference) data
     print("📦 Loading training (reference) data...")
@@ -159,7 +171,11 @@ def main(args):
     # 5) Build & run Evidently report
     print("📊 Running Evidently drift report...")
     report = Report(metrics=[DataDriftPreset(), TargetDriftPreset()])
-    report.run(reference_data=train_df, current_data=batch_df, column_mapping=column_mapping)
+    report.run(
+        reference_data=train_df,
+        current_data=batch_df,
+        column_mapping=column_mapping,
+    )
 
     # 6) Save reports locally (safe write)
     json_text = json.dumps(report.as_dict(), indent=2)
@@ -186,9 +202,19 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Evidently monitoring on training vs prediction data")
-    parser.add_argument("--train_data_path", type=str, help="Path to training data (CSV). Supports gs:// paths.")
-    parser.add_argument("--prediction_path", type=str, help="Path to prediction data (CSV). Supports gs:// paths.")
+    parser = argparse.ArgumentParser(
+        description="Run Evidently monitoring on training vs prediction data"
+    )
+    parser.add_argument(
+        "--train_data_path",
+        type=str,
+        help="Path to training data (CSV). Supports gs:// paths.",
+    )
+    parser.add_argument(
+        "--prediction_path",
+        type=str,
+        help="Path to prediction data (CSV). Supports gs:// paths.",
+    )
     args = parser.parse_args()
 
     main(args)

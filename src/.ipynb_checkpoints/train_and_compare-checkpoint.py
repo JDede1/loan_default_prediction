@@ -1,18 +1,20 @@
 # src/train_and_compare.py
 
-import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
-from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score
 import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
+from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier
+
 
 def load_data(path="../data/loan_default_selected_features_clean.csv"):
     df = pd.read_csv(path)
     X = df.drop("loan_status", axis=1)
     y = df["loan_status"]
     return train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+
 
 def evaluate_model(name, model, X_train, y_train, X_test, y_test):
     model.fit(X_train, y_train)
@@ -27,14 +29,23 @@ def evaluate_model(name, model, X_train, y_train, X_test, y_test):
         "Recall": recall_score(y_test, y_pred),
     }
 
+
 def main():
     X_train, X_test, y_train, y_test = load_data()
 
     models = {
-        "Logistic Regression": LogisticRegression(max_iter=1000, class_weight="balanced", random_state=42),
-        "Random Forest": RandomForestClassifier(n_estimators=100, class_weight="balanced", random_state=42),
-        "XGBoost": XGBClassifier(use_label_encoder=False, eval_metric='logloss',
-                                 scale_pos_weight=(y_train == 0).sum() / (y_train == 1).sum(), random_state=42)
+        "Logistic Regression": LogisticRegression(
+            max_iter=1000, class_weight="balanced", random_state=42
+        ),
+        "Random Forest": RandomForestClassifier(
+            n_estimators=100, class_weight="balanced", random_state=42
+        ),
+        "XGBoost": XGBClassifier(
+            use_label_encoder=False,
+            eval_metric="logloss",
+            scale_pos_weight=(y_train == 0).sum() / (y_train == 1).sum(),
+            random_state=42,
+        ),
     }
 
     results = []
@@ -49,12 +60,15 @@ def main():
     print(results_df)
 
     # Plot comparison
-    results_df.set_index("Model")[["AUC", "F1", "Precision", "Recall"]].plot(kind="bar", figsize=(10, 6))
+    results_df.set_index("Model")[["AUC", "F1", "Precision", "Recall"]].plot(
+        kind="bar", figsize=(10, 6)
+    )
     plt.title("Model Performance Comparison")
     plt.ylabel("Score")
     plt.xticks(rotation=0)
     plt.tight_layout()
     plt.show()
+
 
 if __name__ == "__main__":
     main()
