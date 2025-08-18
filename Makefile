@@ -10,6 +10,7 @@ lint:
 
 format:
 	black src tests
+	isort src tests
 
 test:
 	pytest -v tests

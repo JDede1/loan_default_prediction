@@ -1,0 +1,31 @@
+# .flake8
+[flake8]
+# Ignore virtualenv, build, cache dirs
+exclude = 
+    .git,
+    __pycache__,
+    .venv,
+    .mlflow-venv,
+    .pytest_cache,
+    airflow/logs,
+    airflow/mlruns,
+    artifacts,
+    mlruns,
+    build,
+    dist
+
+# Set max line length (align with Black default: 88)
+max-line-length = 88
+
+# Enable useful error/warning codes
+select = C,E,F,W,B,B950
+
+# Ignore rules that Black already handles or that are too strict
+ignore = 
+    E203,  # whitespace before ':'
+    E501,  # line length (handled by Black)
+    W503   # line break before binary operator
+
+# Per-file ignores (optional — example)
+per-file-ignores =
+    tests/*: D,S101

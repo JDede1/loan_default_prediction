@@ -1,0 +1,40 @@
+# pyproject.toml
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | \.mlflow-venv
+  | \.pytest_cache
+  | build
+  | dist
+  | mlruns
+  | artifacts
+  | airflow/logs
+  | airflow/mlruns
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+combine_as_imports = true
+skip = ["mlruns", "artifacts", "airflow/logs", "airflow/mlruns"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-ra -q"
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "unit: marks fast isolated tests",
+    "integration: marks tests requiring services (mlflow, airflow, etc)"
+]
+
