@@ -67,7 +67,7 @@ flowchart LR
     end
 
     subgraph Serving["🚀 Model Serving"]
-        Staging --> API["MLflow REST API (Docker)"]
+        Staging --> API["MLflow REST API - Docker"]
     end
 
     subgraph Batch["📈 Batch Prediction DAG"]
@@ -77,12 +77,12 @@ flowchart LR
     end
 
     subgraph Monitoring["🛡️ Monitoring DAG"]
-        Marker --> M1[monitor_predictions.py (Evidently)]
+        Marker --> M1[monitor_predictions.py + Evidently]
         A --> M1
         M1 --> Reports[(Reports in GCS)]
     end
-```
 
+```
 ### Tech Stack
 
 * **Cloud & IaC**: Google Cloud Storage (GCS), Terraform
