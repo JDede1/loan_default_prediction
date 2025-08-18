@@ -58,38 +58,38 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    subgraph Data["GCS Data"]
+    subgraph Data["📊 GCS Data"]
         A[loan_default_selected_features_clean.csv]
         B[batch_input.csv]
     end
 
-    subgraph Training["Training DAG"]
+    subgraph Training["🧠 Training DAG"]
         A --> T1[train_with_mlflow.py]
         T1 --> MLflow[(MLflow Tracking & Registry)]
         T1 --> Artifacts[(GCS Artifacts)]
     end
 
-    subgraph Registry["MLflow Registry"]
+    subgraph Registry["📦 MLflow Registry"]
         MLflow --> Staging[(Staging Alias)]
         MLflow --> Production[(Production Alias)]
     end
 
-    subgraph Serving["Model Serving"]
-        Staging --> API[MLflow REST API (Docker)]
+    subgraph Serving["🚀 Model Serving"]
+        Staging --> API["MLflow REST API (Docker)"]
     end
 
-    subgraph Batch["Batch Prediction DAG"]
+    subgraph Batch["📈 Batch Prediction DAG"]
         B --> P1[batch_predict.py]
         P1 --> Predictions[(Predictions in GCS)]
         Predictions --> Marker[latest_prediction.txt]
     end
 
-    subgraph Monitoring["Monitoring DAG"]
+    subgraph Monitoring["🛡️ Monitoring DAG"]
         Marker --> M1[monitor_predictions.py (Evidently)]
         A --> M1
         M1 --> Reports[(Reports in GCS)]
     end
-```
+  ```
 
 ### Technologies
 
