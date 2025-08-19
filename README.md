@@ -334,7 +334,7 @@ make terraform-destroy
 
 This section shows how to run **training**, **serving**, **batch inference**, and **monitoring** — either via **Airflow** (recommended) or **manually** for quick local checks.
 
-### 1 Start the stack
+### Start the stack
 
 From repo root:
 
@@ -352,7 +352,7 @@ Stop everything:
 make stop
 ```
 
-### 2 Run pipelines via Airflow (recommended)
+### Run pipelines via Airflow (recommended)
 
 Open Airflow UI → **[http://localhost:8080](http://localhost:8080)**
 
@@ -381,7 +381,7 @@ DAGs to run (in order):
 > Tip: You can trigger DAG runs manually in the UI or let the cron schedules handle it.
 
 
-### 3 Train locally (manual)
+### Train locally (manual)
 
 If you want a quick local training run (outside Airflow), you can invoke the training script:
 
@@ -398,11 +398,11 @@ Results:
 * Run appears in **MLflow UI**
 * Registered model/alias updated (if `--register_name` provided)
 
-### 4 Serving API (real-time inference)
+### Serving API (real-time inference)
 
 The **serve** container hosts an MLflow model server bound to the **Model Registry alias**.
 
-### Quick curl test
+#### Quick curl test
 
 ```bash
 curl -X POST http://localhost:5001/invocations \
@@ -416,7 +416,7 @@ Expected:
 {"predictions": [0, 1, ...]}
 ```
 
-### Python test
+#### Python test
 
 ```bash
 python src/predict.py
@@ -461,13 +461,13 @@ If `STORAGE_BACKEND=gcs` and `GCS_BUCKET` are set, reports are also uploaded to 
 
 ### Tests
 
-### Unit tests (fast)
+#### Unit tests (fast)
 
 ```bash
 make test
 ```
 
-### Integration tests (inside Airflow container)
+#### Integration tests (inside Airflow container)
 
 These hit real containers (MLflow server, model registry):
 
