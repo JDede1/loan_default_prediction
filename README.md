@@ -53,6 +53,34 @@ flowchart LR
     M -- |drift detected| --> T
 ```
 
+```mermaid
+flowchart LR
+
+    subgraph Training
+        D[📊 Data GCS] --> T[🧠 Training DAG]
+        T --> A1[📂 Artifacts to GCS]
+    end
+
+    subgraph Registry
+        T --> R[📦 MLflow Registry Staging]
+        R --> Pm[🔄 Promote DAG]
+        Pm --> Prod[📦 Registry Production]
+    end
+
+    subgraph Serving
+        Prod --> S[🚀 Serving API]
+        S --> BP[📈 Batch Predictions]
+        BP --> A2[📂 Predictions to GCS]
+    end
+
+    subgraph Monitoring
+        BP --> M[🛡️ Drift Detection Evidently]
+        M --> A3[📑 Reports to GCS]
+        M -- |drift detected| --> T
+    end
+```
+
+
 ### Detailed Architecture
 
 ```mermaid
