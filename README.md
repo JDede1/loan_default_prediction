@@ -51,8 +51,6 @@ flowchart LR
 
     M --> A3[📑 Reports to GCS]
     M -- drift/degrade --> T
-
-
 ```
 
 ### Detailed Architecture
