@@ -28,7 +28,6 @@ This pipeline is designed for **scalability, reproducibility, and automation**, 
 * **Target variable**: `loan_status` (defaulted vs non-defaulted).
 
 ---
-
 ---
 
 ## 🏗️ Architecture & Tools
@@ -81,7 +80,6 @@ flowchart LR
     end
 ```
 ---
-
 ---
 
 ## ⚙️ Tech Stack
@@ -124,7 +122,6 @@ This project integrates **Machine Learning**, **MLOps**, and **Cloud Infrastruct
   * [mypy](https://mypy.readthedocs.io/) – static type checking
 
 ---
-
 ---
 
 ## 📂 Repository Structure
@@ -203,7 +200,6 @@ loan_default_prediction/
 * **`data/`** → Example input and sample request payloads
 
 ---
-
 ---
 
 ## ⚙️ Setup & Installation
@@ -328,7 +324,6 @@ To tear down:
 make terraform-destroy
 ```
 ---
-
 ---
 ## 🚀 Usage
 
@@ -500,54 +495,40 @@ python src/batch_predict.py --model_name loan_default_model --alias staging --in
 python src/monitor_predictions.py --train_data_path data/loan_default_selected_features_clean.csv --prediction_path artifacts/preds_*.csv
 ```
 ---
-
 ---
 
 ## 🚦 CI/CD
 
-We use **GitHub Actions** for continuous integration to ensure code quality and reliability across the project.
+We use **GitHub Actions** for continuous integration to ensure code quality and reliability across the project.  
 Every **push** or **pull request** to the `main` branch triggers the CI pipeline, which runs the following stages:
 
 1. **Linting & Formatting**
-
    * Ensures code consistency and style with **flake8**, **black**, and **isort**.
 
 2. **Testing**
-
    * Runs **pytest** for unit and functional tests.
    * Integration tests (e.g., API calls to the MLflow model server) are supported and can be toggled with `RUN_INTEGRATION_TESTS`.
 
 3. **CI Results**
-
    * Status is reported back to GitHub with pass/fail checks.
    * Badges in the README display the current CI status.
 
 4. **Future CD Extensions** (Planned)
-
    * Automated **Docker builds** for Airflow, serving, and monitoring services.
    * Deployment to **Google Cloud Platform (GCP)** using Terraform.
    * Automatic model promotion and batch job scheduling triggered by registry updates.
+
 ---
-### CI/CD Workflow
 
 ```mermaid
-flowchart LR
-    A[💻 Developer Push/PR] --> B[🔄 GitHub Actions CI]
-    B --> C[🧹 Linting<br>(flake8, black, isort)]
-    B --> D[🧪 Testing<br>(pytest, pytest-cov)]
-    D -->|Unit Tests| E1[✅ Fast feedback]
-    D -->|Integration Tests| E2[⚡ Optional via RUN_INTEGRATION_TESTS]
-    C --> F[📊 CI Results<br>(Pass/Fail Badge)]
-    E1 --> F
-    E2 --> F
-
-    F --> G[🚀 Future CD Extensions]
-    G --> H[📦 Docker Deployments]
-    G --> I[☁️ GCP via Terraform]
-    G --> J[📈 Auto Model Promotion + Batch Jobs]
-```
+flowchart TD
+    A[Push/Pull Request to main] --> B[Linting & Formatting]
+    B --> C[Testing]
+    C --> D[CI Results Reported]
+    D --> E[Badges Updated]
+    D --> F[Future: Docker Builds + GCP Deployment]
+````
 ---
-
 ---
 
 ## Infrastructure (Terraform)
@@ -626,7 +607,6 @@ flowchart TD
     MLflow["📦 MLflow Tracking/Registry"] -->|store artifacts| GCS
 ```
 ---
-
 ---
 
 ## Development & Contribution
