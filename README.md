@@ -36,14 +36,18 @@ This pipeline is designed for **scalability, reproducibility, and automation**, 
 
 ```mermaid
 flowchart LR
-    D[Data] --> T[Training DAG]
+    D[Data (GCS)] --> T[Training DAG]
     T --> R[MLflow Registry (Staging)]
+    T --> A1[Artifacts to GCS]
     R --> Pm[Promote DAG]
     Pm --> Prod[Registry (Production)]
     Prod --> S[Serving API]
     S --> BP[Batch Predictions]
+    BP --> A2[Predictions to GCS]
     BP --> M[Monitoring (Evidently)]
-    M -- drift or degradation --> T
+    M --> A3[Reports to GCS]
+    M -- drift/degrade --> T
+
 ```
 
 ### Detailed Architecture
