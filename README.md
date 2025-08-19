@@ -83,42 +83,6 @@ flowchart LR
 
     classDef dag fill:#f9f,stroke:#333,stroke-width:2px;
 ```
-
-
-```mermaid
-flowchart LR
-    subgraph Data["📊 GCS Data"]
-        A[loan_default_selected_features_clean.csv]
-        B[batch_input.csv]
-    end
-
-    subgraph Training["🧠 Training DAG"]
-        A --> T1[train_with_mlflow.py]
-        T1 --> MLflow[(MLflow Tracking & Registry)]
-        T1 --> Artifacts[(GCS Artifacts)]
-    end
-
-    subgraph Registry["📦 MLflow Registry"]
-        MLflow --> Staging[(Staging Alias)]
-        MLflow --> Production[(Production Alias)]
-    end
-
-    subgraph Serving["🚀 Model Serving"]
-        Staging --> API["MLflow REST API - Docker"]
-    end
-
-    subgraph Batch["📈 Batch Prediction DAG"]
-        B --> P1[batch_predict.py]
-        P1 --> Predictions[(Predictions in GCS)]
-        Predictions --> Marker[latest_prediction.txt]
-    end
-
-    subgraph Monitoring["🛡️ Monitoring DAG"]
-        Marker --> M1[monitor_predictions.py + Evidently]
-        A --> M1
-        M1 --> Reports[(Reports in GCS)]
-    end
-```
 🔑 **Key Design Choice: Model Serving**
 
 Instead of building a custom **FastAPI** or **Flask service**, this project leverages **MLflow’s built-in REST API** for serving models.
