@@ -34,10 +34,6 @@ This pipeline is designed for **scalability, reproducibility, and automation**, 
 
 ### High-Level Workflow
 
-![Workflow](./workflow.svg)
-
-### High-Level Workflow
-
 ```mermaid
 flowchart LR
     D[📊 Data GCS] --> T[🧠 Training DAG]
@@ -56,7 +52,6 @@ flowchart LR
     M --> A3[📑 Reports to GCS]
     M -- |drift detected| --> T
 ```
-
 
 ### Detailed Architecture
 
