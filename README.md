@@ -54,7 +54,8 @@ flowchart LR
     BP --> M[🛡️ Drift Detection (Evidently)]
 
     M --> A3[📑 Reports to GCS]
-    M -- |drift or degrade| --> T
+    M -- |drift detected| --> T
+
 ```
 
 ### Detailed Architecture
