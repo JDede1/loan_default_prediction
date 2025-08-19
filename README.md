@@ -38,7 +38,10 @@ This pipeline is designed for **scalability, reproducibility, and automation**, 
 
 ### High-Level Workflow
 
+```mermaid 
+
 flowchart LR
+
     D[📊 Data (GCS)] --> T[🧠 Training DAG]
     T --> R[📦 MLflow Registry (Staging)]
     T --> A1[📂 Artifacts to GCS]
@@ -54,7 +57,6 @@ flowchart LR
 
     M --> A3[📑 Reports to GCS]
     M -- |drift or degrade| --> T
-
 ```
 
 ### Detailed Architecture
