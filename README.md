@@ -106,13 +106,13 @@ flowchart LR
 
 Instead of building a custom **FastAPI** or **Flask service**, this project leverages **MLflow’s built-in REST API** for serving models.
 
-  ✅ **Standardized interface** → Follows MLflow’s model format and signature.
+  -- **Standardized interface** → Follows MLflow’s model format and signature.
 
-  ✅ **Less boilerplate** → No need to maintain custom inference logic.
+  -- **Less boilerplate** → No need to maintain custom inference logic.
 
-  ✅ **CI/CD-friendly** → Integration tests directly hit the `/invocations endpoint.
+  -- **CI/CD-friendly** → Integration tests directly hit the `/invocations endpoint.
 
-  ✅ **Portable** → The same model can be served locally, in Docker, or in cloud environments without modification.
+  -- **Portable** → The same model can be served locally, in Docker, or in cloud environments without modification.
 
 ---
 ---
