@@ -79,7 +79,7 @@ flowchart LR
         M1 --> Reports[(Reports in GCS)]
     end
 ```
-🔑 Key Design Choice: Model Serving
+🔑 **Key Design Choice: Model Serving**
 
 Instead of building a custom **FastAPI** or **Flask service**, this project leverages **MLflow’s built-in REST API** for serving models.
 
