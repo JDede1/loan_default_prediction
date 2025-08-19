@@ -38,7 +38,6 @@ This pipeline is designed for **scalability, reproducibility, and automation**, 
 
 ### High-Level Workflow
 
-```mermaid
 flowchart LR
     D[📊 Data (GCS)] --> T[🧠 Training DAG]
     T --> R[📦 MLflow Registry (Staging)]
@@ -54,7 +53,7 @@ flowchart LR
     BP --> M[🛡️ Drift Detection (Evidently)]
 
     M --> A3[📑 Reports to GCS]
-    M -- drift/degrade --> T
+    M -- |drift or degrade| --> T
 
 ```
 
