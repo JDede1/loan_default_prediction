@@ -527,7 +527,7 @@ Every **push** or **pull request** to the `main` branch triggers the CI pipeline
    * Automated **Docker builds** for Airflow, serving, and monitoring services.
    * Deployment to **Google Cloud Platform (GCP)** using Terraform.
    * Automatic model promotion and batch job scheduling triggered by registry updates.
-
+---
 ### CI/CD Workflow
 
 ```mermaid
