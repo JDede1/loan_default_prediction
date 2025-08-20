@@ -1,35 +1,55 @@
+---
 # 🏦 Loan Default Prediction – End-to-End MLOps Project
 
 This project implements an **end-to-end MLOps pipeline** for predicting loan defaults using the [LendingClub dataset](https://www.kaggle.com/wordsforthewise/lending-club). The goal is to help financial institutions and lenders **assess borrower risk** and make more informed lending decisions.
-
+---
 ---
 
+---
+## ✅Capstone Evaluation Criteria Mapping
+
+This project meets the **DataTalksClub MLOps Zoomcamp** capstone requirements:
+
+* **Problem description** → Clear business use case: loan default prediction.
+* **Cloud (GCP + Terraform)** → Infrastructure provisioned with IaC (`infra/terraform`).
+* **Experiment tracking & registry** → MLflow (tracking, artifacts, registry, model aliases).
+* **Workflow orchestration** → Apache Airflow DAGs (training, batch prediction, monitoring, promotion).
+* **Model deployment** → Dockerized MLflow REST API serving models from registry aliases.
+* **Model monitoring** → Evidently AI for drift detection, automated reports.
+* **Reproducibility** → Makefile, pinned dependencies, `.env`, and Terraform ensure reproducibility.
+* **Best practices** → Unit + integration tests, linting, formatting, type checking, Makefile, CI/CD (GitHub Actions).
+---
+---
+
+---
 ## 📌 Project Overview
 
-This project part of the **[DataTalksClub MLOps Zoomcamp](https://github.com/DataTalksClub/mlops-zoomcamp)** capstone. The solution is built with **production readiness** in mind, covering the full machine learning lifecycle:
+The pipeline covers the full machine learning lifecycle:
 
-* **Data ingestion & preprocessing** – clean, transform, and validate input loan application data.
-* **Model training & experiment tracking** – train ML models (XGBoost, Logistic Regression, Random Forest), log metrics, parameters, and artifacts using **MLflow**.
-* **Model registry & versioning** – manage models in **MLflow Registry**, with separate Staging and Production stages.
-* **Model serving** – deploy models via **Dockerized MLflow REST API** for real-time predictions.
-* **Batch inference pipeline** – schedule recurring predictions with **Apache Airflow**.
-* **Monitoring & drift detection** – track data drift and target drift with **Evidently AI**, generating automated reports.
-* **Infrastructure-as-Code (IaC)** – provision cloud resources using **Terraform** on GCP (Google Cloud Platform).
-* **CI/CD** – enforce testing, linting, and formatting via **GitHub Actions**.
+* **Data ingestion & preprocessing** – clean, transform, validate input loan data.
+* **Model training & experiment tracking** – XGBoost, Logistic Regression, Random Forest, tracked with **MLflow**.
+* **Model registry & versioning** – MLflow Staging/Production with alias promotion DAG.
+* **Model serving** – Dockerized MLflow REST API for real-time inference.
+* **Batch inference pipeline** – automated via **Airflow DAGs**.
+* **Monitoring & drift detection** – Evidently AI reports for data/target drift.
+* **Infrastructure-as-Code (IaC)** – GCP resources provisioned with **Terraform**.
+* **CI/CD** – Linting, testing, and integration checks with **GitHub Actions**.
 
-This pipeline is designed for **scalability, reproducibility, and automation**, ensuring smooth collaboration between Data Science and DevOps teams.
+> ℹ️ **Note**: Airflow DAGs are the main orchestration method. Manual commands are included for debugging/quick checks.
+---
+---
 
+---
+## 📊Dataset
 
-### Dataset
-
-* **Source**: LendingClub Loan Dataset (public).
+* **Source**: LendingClub Loan Dataset (public via Kaggle).
 * **Cleaned version**: `gs://loan-default-artifacts-loan-default-mlops/data/loan_default_selected_features_clean.csv`
 * **Features**: loan amount, interest rate, credit grade, revolving balance, etc.
 * **Target variable**: `loan_status` (defaulted vs non-defaulted).
-
 ---
 ---
 
+---
 ## 🏗️ Architecture & Tools
 
 ### High-Level Workflow
@@ -60,8 +80,6 @@ flowchart LR
         M -- |drift detected| --> T
     end
 ```
-
-
 ### Detailed Architecture
 
 ```mermaid
@@ -102,22 +120,18 @@ flowchart LR
 
     classDef dag fill:#f9f,stroke:#333,stroke-width:2px;
 ```
-🔑 **Key Design Choice: Model Serving**
+**Key Design Choice: Model Serving**
+Instead of building a custom **FastAPI/Flask app**, this project uses **MLflow’s REST API** for serving:
 
-Instead of building a custom **FastAPI** or **Flask service**, this project leverages **MLflow’s built-in REST API** for serving models.
-
-  -- **Standardized interface** → Follows MLflow’s model format and signature.
-
-  -- **Less boilerplate** → No need to maintain custom inference logic.
-
-  -- **CI/CD-friendly** → Integration tests directly hit the `/invocations endpoint.
-
-  -- **Portable** → The same model can be served locally, in Docker, or in cloud environments without modification.
-
+* Standardized interface
+* Less boilerplate
+* CI/CD-friendly (integration tests hit `/invocations`)
+* Portable (local, Docker, or cloud)
 ---
 ---
 
-## ⚙️ Tech Stack
+---
+## 📦 Tech Stack
 
 This project integrates **Machine Learning**, **MLOps**, and **Cloud Infrastructure** tools to deliver a production-ready loan default prediction system.
 
@@ -155,10 +169,10 @@ This project integrates **Machine Learning**, **MLOps**, and **Cloud Infrastruct
   * [black](https://black.readthedocs.io/) – code formatting
   * [isort](https://pycqa.github.io/isort/) – import sorting
   * [mypy](https://mypy.readthedocs.io/) – static type checking
-
 ---
 ---
 
+---
 ## 📂 Repository Structure
 
 ```bash
@@ -226,17 +240,17 @@ loan_default_prediction/
 └── LICENSE                   # License file
 ```
 
-### 🔑 Key Directories
+### Key Directories
 
 * **`airflow/`** → Orchestrates ML pipelines via DAGs
 * **`src/`** → Core ML training, prediction, monitoring scripts
 * **`infra/terraform/`** → Cloud infrastructure as code (GCS buckets, service accounts, etc.)
 * **`tests/`** → Unit + integration tests for reliability
 * **`data/`** → Example input and sample request payloads
-
 ---
 ---
 
+---
 ## ⚙️ Setup & Installation
 
 ### Clone the Repository
@@ -326,9 +340,9 @@ The `airflow/` folder includes lower-level scripts (wrapped by the `make` comman
 * `start_serve.sh` / `stop_serve.sh` → Manage serving container
 * `troubleshoot.sh` → Debug services
 
-💡 Use `make` whenever possible. Direct script calls are mostly for debugging.
+Use `make` whenever possible. Direct script calls are mostly for debugging.
 
-### 🛠️ Helper Commands (recommended)
+### Helper Commands (recommended)
 
 Most workflows can be run via `make` targets:
 
@@ -361,7 +375,15 @@ make terraform-plan
 make terraform-apply
 make terraform-destroy
 ```
+```bash
+# terraform.tfvars
+project_id   = "your-gcp-project-id"
+region       = "us-central1"
+bucket_name  = "loan-default-artifacts-mlops"
+```
 ---
+---
+
 ---
 ## 🚀 Usage
 
@@ -413,7 +435,6 @@ DAGs to run (in order):
 
 > Tip: You can trigger DAG runs manually in the UI or let the cron schedules handle it.
 
-
 ### Train locally (manual)
 
 If you want a quick local training run (outside Airflow), you can invoke the training script:
@@ -439,7 +460,7 @@ Start serving:
 
 ```bash
 make start-serve
-
+```
 
 #### Quick curl test
 
@@ -545,12 +566,11 @@ python src/monitor_predictions.py --train_data_path data/loan_default_selected_f
 ---
 ---
 
-## 🚦 CI/CD
-
-* **Unit CI** → runs lint + unit tests on every push/PR
-* **Integration CI** → spins up full stack (Airflow, MLflow, serve) and runs integration tests (manual or nightly)
-
 ---
+## 🔄 CI/CD
+
+* **ci.yml** → unit tests + lint on every push/PR.
+* **ci-integration.yml** → spins up full stack (Airflow + MLflow + serving) and runs integration tests.
 
 ```mermaid
 flowchart TD
@@ -559,15 +579,16 @@ flowchart TD
     C --> D[CI Results Reported]
     D --> E[Badges Updated]
     D --> F[Future: Docker Builds + GCP Deployment]
-````
+```
 ---
 ---
 
-## Infrastructure (Terraform)
+---
+## ☁️ Infrastructure (Terraform)
 
 This project uses **Terraform** to provision and manage Google Cloud resources required for MLflow, Airflow, and batch prediction pipelines.
 
-### 🌍 Infrastructure Components
+### Infrastructure Components
 
 * **Google Cloud Storage (GCS)**
 
@@ -583,7 +604,7 @@ This project uses **Terraform** to provision and manage Google Cloud resources r
   * Terraform keeps track of resource configurations via `terraform.tfstate`
   * Ensures reproducible and version-controlled infrastructure
 
-### 📂 Terraform Directory
+### Terraform Directory
 
 ```bash
 infra/terraform/
@@ -595,7 +616,7 @@ infra/terraform/
 └── .terraform/          # Local Terraform cache (gitignored)
 ```
 
-### ⚙️ Terraform Commands
+### Terraform Commands
 
 All Terraform commands are wrapped in the `Makefile` for simplicity.
 
@@ -613,7 +634,7 @@ make terraform-apply
 make terraform-destroy
 ```
 
-### 🔐 Authentication
+### Authentication
 
 Terraform authenticates with GCP using the **service account key**:
 
@@ -625,7 +646,7 @@ Terraform authenticates with GCP using the **service account key**:
 export GOOGLE_APPLICATION_CREDENTIALS=keys/gcs-service-account.json
 ```
 
-### 🏗️ Visual Overview
+### Visual Overview
 
 ```mermaid
 flowchart TD
@@ -641,13 +662,13 @@ flowchart TD
 ---
 ---
 
-## Development & Contribution
+---
+## 🧑‍💻 Development & Contribution
 
-We welcome contributions 🚀 to improve the project.
+We welcome contributions to improve the project.
 Follow the guidelines below to ensure consistency, code quality, and smooth collaboration.
 
-
-### 🛠️ Development Setup
+### Development Setup
 
 Clone the repository and install dependencies:
 
@@ -659,7 +680,7 @@ cd loan_default_prediction
 make install
 ```
 
-### 📦 Code Quality
+### Code Quality
 
 The project enforces **linting, formatting, and type checks**:
 
@@ -683,7 +704,7 @@ make test
 * **Pytest** → Unit & integration testing
 
 
-### 🔀 Git Workflow
+### Git Workflow
 
 1. **Create a feature branch**
 
@@ -705,7 +726,7 @@ make test
 
 4. **PR Review & Merge** → Code is reviewed before merging into `main`.
 
-### 🧪 Testing
+### Testing
 
 * Unit tests → `tests/test_utils.py`
 * Integration tests → `tests/test_prediction_integration.py` & `tests/test_batch_prediction_integration.py`
@@ -716,22 +737,21 @@ To run integration tests locally:
 RUN_INTEGRATION_TESTS=1 pytest -m integration -v
 ```
 
-### 📜 Contribution Guidelines
+### Contribution Guidelines
 
 * Write clear commit messages (conventional commits encouraged).
 * Add/update tests for new features.
 * Ensure `make lint format test` passes before submitting PR.
 * Document new features in the **README** or inline code comments.
-
+---
 ---
 
 ---
-
-## Future Improvements
+## 📈 Future Improvements
 
 A forward-looking roadmap to strengthen robustness, scale, and MLOps maturity.
 
-### 🔬 Modeling & Data
+### Modeling & Data
 
 * **Feature store** (Feast) for consistent online/offline features.
 * **Hyperparameter search at scale** (Optuna on Ray/Vertex Vizier); early stopping & pruning.
@@ -740,42 +760,42 @@ A forward-looking roadmap to strengthen robustness, scale, and MLOps maturity.
 * **Online inference features** (recent credit events, rolling aggregates via streaming).
 * **Automated data quality gates** (Great Expectations checks in DAG pre-steps).
 
-### 🛠️ Automation & Orchestration
+### Automation & Orchestration
 
 * **Promotion policy as code**: formalize thresholds/guards in a single YAML consumed by both Airflow and CI.
 * **Blue/green or canary serving**: route % traffic to the candidate model; rollback on SLO breach.
 * **Backfills** and **reprocessing DAGs** with idempotent runs & data versioning (Delta/BigQuery time travel).
 
-### 📈 Monitoring & Observability
+### Monitoring & Observability
 
 * Expand **Evidently** coverage: target + data drift, stability, PSI, population shifts.
 * **Latency & availability SLOs** for serving; alerts in Slack/Email with run links.
 * Centralized logs/metrics/traces (OpenTelemetry → Grafana/Prometheus/Loki).
 
-### ☁️ Infrastructure & Scale
+### Infrastructure & Scale
 
 * **Artifact store hardening**: signed URLs, retention tiers, inventory reports.
 * **Autoscaling** for serving (KEDA/HPA) and **GPU-ready** build variants (if needed).
 * **Distributed training** (Ray, Dask, or Spark) when dataset volume grows.
 
-### 🔐 Security & Compliance
+### Security & Compliance
 
 * Secrets via **GCP Secret Manager**; remove JSON keys from mounts.
 * **Least-privilege service accounts**; per-environment isolation (dev/stage/prod).
 * Audit trails on **model registry** changes (who/what/when) surfaced in PRs.
 
-### 💸 Cost & Efficiency
+### Cost & Efficiency
 
 * Storage lifecycle policies (archive → delete).
 * Spot/preemptible training nodes; cache datasets & artifacts.
 * CI caching (pip/pytest) and conditional workflows to avoid redundant runs.
 
-### 🧭 Governance & Reproducibility
+### Governance & Reproducibility
 
 * **Model cards** and **data cards** published per release.
 * Data & model **lineage** (OpenLineage + Marquez, or built-in with Airflow).
 * **Semantic versioning** for models (e.g., `v{major.minor.patch}`) synced to registry aliases.
-
+---
 ---
 
 ---
