@@ -3,7 +3,7 @@
 
 This project implements an **end-to-end MLOps pipeline** for predicting loan defaults using the [LendingClub dataset](https://www.kaggle.com/wordsforthewise/lending-club). The goal is to help financial institutions and lenders **assess borrower risk** and make more informed lending decisions.
 ---
----
+
 
 ---
 ## ✅Capstone Evaluation Criteria Mapping
@@ -19,7 +19,7 @@ This project meets the **DataTalksClub MLOps Zoomcamp** capstone requirements:
 * **Reproducibility** → Makefile, pinned dependencies, `.env`, and Terraform ensure reproducibility.
 * **Best practices** → Unit + integration tests, linting, formatting, type checking, Makefile, CI/CD (GitHub Actions).
 ---
----
+
 
 ---
 ## 📌 Project Overview
@@ -37,7 +37,7 @@ The pipeline covers the full machine learning lifecycle:
 
 > ℹ️ **Note**: Airflow DAGs are the main orchestration method. Manual commands are included for debugging/quick checks.
 ---
----
+
 
 ---
 ## 📊Dataset
@@ -47,7 +47,7 @@ The pipeline covers the full machine learning lifecycle:
 * **Features**: loan amount, interest rate, credit grade, revolving balance, etc.
 * **Target variable**: `loan_status` (defaulted vs non-defaulted).
 ---
----
+
 
 ---
 ## 🏗️ Architecture & Tools
@@ -128,7 +128,7 @@ Instead of building a custom **FastAPI/Flask app**, this project uses **MLflow�
 * CI/CD-friendly (integration tests hit `/invocations`)
 * Portable (local, Docker, or cloud)
 ---
----
+
 
 ---
 ## 📦 Tech Stack
@@ -170,85 +170,85 @@ This project integrates **Machine Learning**, **MLOps**, and **Cloud Infrastruct
   * [isort](https://pycqa.github.io/isort/) – import sorting
   * [mypy](https://mypy.readthedocs.io/) – static type checking
 ---
----
+
 
 ---
 ## 📂 Repository Structure
 
 ```bash
 loan_default_prediction/
-├── .github/workflows/        # CI/CD pipeline (GitHub Actions)
-│   └── ci.yml
-├── airflow/                  # Airflow orchestration environment
-│   ├── dags/                 # Training, batch prediction, monitoring DAGs
+├── .github/workflows/          # CI/CD workflows (GitHub Actions)
+│   ├── ci.yml                  # Linting + unit tests
+│   └── ci-integration.yml      # Full stack integration tests
+│
+├── airflow/                    # Airflow orchestration stack
+│   ├── dags/                   # Training, prediction, monitoring, promotion DAGs
 │   │   ├── train_pipeline_dag.py
 │   │   ├── batch_prediction_dag.py
 │   │   ├── monitoring_dag.py
 │   │   └── promote_model_dag.py
-│   ├── docker-compose.yaml   # Local Airflow + MLflow + GCS setup
-│   ├── start_all.sh          # Start Airflow + services
-│   ├── stop_all.sh           # Stop Airflow + services
-│   ├── start_serve.sh        # Start MLflow serving container
-│   ├── stop_serve.sh         # Stop MLflow serving container
-│   ├── logs/                 # Airflow runtime logs
-│   ├── artifacts/            # Airflow-local artifacts (predictions, reports)
-│   └── mlruns/               # Local MLflow tracking (if not using GCS)
+│   ├── artifacts/              # Local artifacts (predictions, reports)
+│   ├── mlruns/                 # Local MLflow tracking (if not using GCS)
+│   ├── logs/                   # Airflow runtime logs
+│   ├── keys/                   # GCP service account (mounted inside Airflow)
+│   ├── docker-compose.yaml     # Airflow + MLflow + Postgres stack
+│   ├── start_all.sh / stop_all.sh
+│   ├── start_serve.sh / stop_serve.sh
+│   └── troubleshoot.sh         # Debugging helper
 │
-├── data/                     # Input data
-│   ├── batch_input.csv       # Example batch input
-│   └── sample_input.json     # Sample request for prediction API
-│
-├── infra/terraform/          # IaC for GCP resources
-│   ├── main.tf               # Core infra definitions
-│   ├── variables.tf          # Parameterized variables
-│   ├── outputs.tf            # Outputs for GCS, services, etc.
-│   └── terraform.tfvars      # Environment-specific variables
-│
-├── src/                      # Core ML code
-│   ├── train_with_mlflow.py  # Train & log models with MLflow
+├── src/                        # Core ML code
+│   ├── train_with_mlflow.py    # Train & log models with MLflow
 │   ├── tune_xgboost_with_optuna.py  # Hyperparameter tuning
-│   ├── train.py              # Baseline model training
-│   ├── train_and_compare.py  # Compare multiple models
-│   ├── batch_predict.py      # Batch inference script
-│   ├── monitor_predictions.py # Drift detection & monitoring reports
-│   ├── predict.py            # Local test client for serving API
-│   ├── utils.py              # Shared helpers
-│   └── config/               # (Optional) config files
+│   ├── batch_predict.py        # Batch inference
+│   ├── monitor_predictions.py  # Drift detection with Evidently
+│   ├── predict.py              # Test client for serving API
+│   ├── train.py                # Baseline training
+│   ├── train_and_compare.py    # Train + compare multiple models
+│   └── utils.py                # Shared helpers
 │
-├── tests/                    # Unit & integration tests
+├── infra/terraform/            # IaC for GCP resources
+│   ├── main.tf / variables.tf / outputs.tf
+│   └── terraform.tfvars        # Environment-specific config
+│
+├── tests/                      # Unit & integration tests
 │   ├── test_utils.py
 │   ├── test_prediction_integration.py
-│   ├── test_batch_prediction_integration.py
-│   └── conftest.py (if needed)
+│   └── test_batch_prediction_integration.py
 │
-├── notebooks/                # EDA & experimentation notebooks
+├── data/                       # Example input data
+│   ├── batch_input.csv
+│   └── sample_input.json
 │
-├── requirements.txt          # Core dependencies
-├── requirements-dev.txt      # Dev/test dependencies
-├── requirements-serve.txt    # MLflow serving dependencies
-├── requirements-monitoring.txt # Evidently/monitoring dependencies
-├── Dockerfile                # Base image for training/serving
-├── Dockerfile.airflow        # Airflow image
-├── Dockerfile.serve          # MLflow serving image
-├── Dockerfile.monitor        # Monitoring image
-├── Dockerfile.terraform      # Terraform-in-Docker image
-├── Makefile                  # Automation for linting, tests, Airflow, Terraform
-├── README.md                 # Project documentation (you are here 🚀)
-├── .flake8                   # Linting config
-├── pyproject.toml             # Black/isort/mypy config
-├── .gitignore                # Ignored files
-└── LICENSE                   # License file
+├── notebooks/                  # EDA & experimentation notebooks
+├── artifacts/                  # Local artifacts (predictions, reports, plots)
+├── mlruns/                     # MLflow experiment runs (local)
+├── docker/                     # Docker-related configs (if any)
+├── keys/                       # GCP service account (outside Airflow too)
+│
+├── requirements.txt            # Core dependencies
+├── requirements-dev.txt        # Dev/test dependencies
+├── requirements-serve.txt      # MLflow serving dependencies
+├── requirements-monitoring.txt # Evidently monitoring dependencies
+│
+├── Dockerfile*                 # Docker images (training, Airflow, serving, monitoring, Terraform)
+├── Makefile                    # Automation (lint, test, Airflow, Terraform)
+├── pyproject.toml              # Formatter/type checker configs
+├── pytest.ini                  # Pytest configuration
+├── terraform.sh                # Helper for Terraform commands
+├── LICENSE
+└── README.md
 ```
 
 ### Key Directories
 
-* **`airflow/`** → Orchestrates ML pipelines via DAGs
+* **`airflow/`** → DAGs and orchestration stack
 * **`src/`** → Core ML training, prediction, monitoring scripts
-* **`infra/terraform/`** → Cloud infrastructure as code (GCS buckets, service accounts, etc.)
-* **`tests/`** → Unit + integration tests for reliability
-* **`data/`** → Example input and sample request payloads
+* **`infra/terraform/`** → Cloud infrastructure as code
+* **`tests/`** → Unit & integration tests
+* **`data/`** → Sample input payloads
+* **`artifacts/`** → Predictions, monitoring reports, plots
 ---
----
+
 
 ---
 ## ⚙️ Setup & Installation
@@ -382,7 +382,7 @@ region       = "us-central1"
 bucket_name  = "loan-default-artifacts-mlops"
 ```
 ---
----
+
 
 ---
 ## 🚀 Usage
@@ -564,7 +564,7 @@ python src/batch_predict.py --model_name loan_default_model --alias staging --in
 python src/monitor_predictions.py --train_data_path data/loan_default_selected_features_clean.csv --prediction_path artifacts/preds_*.csv
 ```
 ---
----
+
 
 ---
 ## 🔄 CI/CD
@@ -581,7 +581,7 @@ flowchart TD
     D --> F[Future: Docker Builds + GCP Deployment]
 ```
 ---
----
+
 
 ---
 ## ☁️ Infrastructure (Terraform)
@@ -660,7 +660,7 @@ flowchart TD
     MLflow["📦 MLflow Tracking/Registry"] -->|store artifacts| GCS
 ```
 ---
----
+
 
 ---
 ## 🧑‍💻 Development & Contribution
@@ -744,7 +744,7 @@ RUN_INTEGRATION_TESTS=1 pytest -m integration -v
 * Ensure `make lint format test` passes before submitting PR.
 * Document new features in the **README** or inline code comments.
 ---
----
+
 
 ---
 ## 📈 Future Improvements
@@ -796,7 +796,7 @@ A forward-looking roadmap to strengthen robustness, scale, and MLOps maturity.
 * Data & model **lineage** (OpenLineage + Marquez, or built-in with Airflow).
 * **Semantic versioning** for models (e.g., `v{major.minor.patch}`) synced to registry aliases.
 ---
----
+
 
 ---
 
