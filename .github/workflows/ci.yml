@@ -1,4 +1,4 @@
-name: CI
+name: CI 
 
 on:
   push:
@@ -37,5 +37,5 @@ jobs:
         run: make lint
 
       # ---- Tests ----
-      - name: Run tests
-        run: make test
+      - name: Run unit tests only in CI
+        run: pytest -m "not integration" -v

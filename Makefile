@@ -1,4 +1,4 @@
-.PHONY: install lint format test start stop terraform-init terraform-plan terraform-apply terraform-destroy integration-tests
+.PHONY: install lint format test start stop start-serve stop-serve troubleshoot terraform-init terraform-plan terraform-apply terraform-destroy integration-tests
 
 # === Python/Dev Setup ===
 install:
@@ -15,12 +15,22 @@ format:
 test:
 	pytest -v tests
 
-# === Airflow / MLflow / Model Serving ===
+# === Airflow / MLflow Core ===
 start:
 	cd airflow && ./start_all.sh
 
 stop:
 	cd airflow && ./stop_all.sh
+
+# === Model Serving ===
+start-serve:
+	cd airflow && ./start_serve.sh
+
+stop-serve:
+	cd airflow && ./stop_serve.sh
+
+troubleshoot:
+	cd airflow && ./troubleshoot.sh
 
 # === Terraform (GCP Infrastructure) ===
 terraform-init:

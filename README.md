@@ -310,7 +310,7 @@ This spins up:
 * **Airflow Webserver** ([http://localhost:8080](http://localhost:8080))
 * **MLflow Tracking Server** ([http://localhost:5000](http://localhost:5000))
 * **MLflow Model Serving** ([http://localhost:5001](http://localhost:5001))
-* **Postgres + Redis** (Airflow backend)
+* **Postgres** (Airflow backend)
 
 To stop services:
 
@@ -318,23 +318,36 @@ To stop services:
 make stop
 ```
 
+### Helper Scripts
+
+The `airflow/` folder includes lower-level scripts (wrapped by the `make` commands above):
+
+* `start_all.sh` / `stop_all.sh` → Manage Airflow + MLflow stack
+* `start_serve.sh` / `stop_serve.sh` → Manage serving container
+* `troubleshoot.sh` → Debug services
+
+💡 Use `make` whenever possible. Direct script calls are mostly for debugging.
+
+### 🛠️ Helper Commands (recommended)
+
+Most workflows can be run via `make` targets:
+
+| Command             | Description                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `make start`        | Start **Airflow + MLflow** stack                                                                            |
+| `make start-serve`  | Start **MLflow model serving API** ([http://localhost:5001/invocations](http://localhost:5001/invocations)) |
+| `make stop-serve`   | Stop only the serving container                                                                             |
+| `make stop`         | Stop all services (Airflow, MLflow, serving, Postgres)                                                      |
+| `make troubleshoot` | Run diagnostic checks (logs, permissions, health)                                                           |
+
+
 ### Run Linting & Tests
 
 ```bash
-# Check linting & formatting
-make lint
-
-# Auto-format code
-make format
-
-# Run tests
-make test
-```
-
-Integration tests can also be run inside Airflow containers:
-
-```bash
-make integration-tests
+make lint      # flake8
+make format    # black + isort
+make test      # unit tests
+make integration-tests  # inside containers
 ```
 
 ### Terraform (GCP Infrastructure)
@@ -346,16 +359,6 @@ To deploy (from repo root):
 make terraform-init
 make terraform-plan
 make terraform-apply
-```
-
-This provisions:
-
-* GCS bucket(s) for artifacts
-* Service accounts & IAM bindings
-
-To tear down:
-
-```bash
 make terraform-destroy
 ```
 ---
@@ -432,6 +435,12 @@ Results:
 
 The **serve** container hosts an MLflow model server bound to the **Model Registry alias**.
 
+Start serving:
+
+```bash
+make start-serve
+
+
 #### Quick curl test
 
 ```bash
@@ -454,6 +463,10 @@ python src/predict.py
 
 > If you update the `staging` alias in MLflow, the **same container** will serve the new version automatically.
 
+Stop serving:
+```bash
+make stop-serve
+```
 
 ### Batch prediction (manual)
 
@@ -534,24 +547,8 @@ python src/monitor_predictions.py --train_data_path data/loan_default_selected_f
 
 ## 🚦 CI/CD
 
-We use **GitHub Actions** for continuous integration to ensure code quality and reliability across the project.  
-Every **push** or **pull request** to the `main` branch triggers the CI pipeline, which runs the following stages:
-
-1. **Linting & Formatting**
-   * Ensures code consistency and style with **flake8**, **black**, and **isort**.
-
-2. **Testing**
-   * Runs **pytest** for unit and functional tests.
-   * Integration tests (e.g., API calls to the MLflow model server) are supported and can be toggled with `RUN_INTEGRATION_TESTS`.
-
-3. **CI Results**
-   * Status is reported back to GitHub with pass/fail checks.
-   * Badges in the README display the current CI status.
-
-4. **Future CD Extensions** (Planned)
-   * Automated **Docker builds** for Airflow, serving, and monitoring services.
-   * Deployment to **Google Cloud Platform (GCP)** using Terraform.
-   * Automatic model promotion and batch job scheduling triggered by registry updates.
+* **Unit CI** → runs lint + unit tests on every push/PR
+* **Integration CI** → spins up full stack (Airflow, MLflow, serve) and runs integration tests (manual or nightly)
 
 ---
 
@@ -787,7 +784,7 @@ A forward-looking roadmap to strengthen robustness, scale, and MLOps maturity.
 
 I would like to sincerely thank the following for their guidance, encouragement, and inspiration throughout the course of this project:
 
-* **My mentors and peers**, whose feedback and discussions provided invaluable insights.
+* **The Datatalks.club mentors and peers**, whose feedback and discussions provided invaluable insights.
 * **The broader data science and MLOps community**, for sharing knowledge and best practices that shaped my approach.
 * **Family and friends**, for their unwavering support and patience during the many long hours dedicated to building and refining this project.
 
