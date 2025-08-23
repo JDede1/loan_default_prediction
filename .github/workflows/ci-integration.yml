@@ -1,4 +1,4 @@
-name: Integration Tests
+name: Integration Tests 
 
 on:
   workflow_dispatch:   # run manually from GitHub Actions tab
@@ -14,6 +14,10 @@ jobs:
       # ---- Checkout code ----
       - name: Checkout
         uses: actions/checkout@v4
+
+      # ---- Debug: show workflow content being used ----
+      - name: Debug workflow file
+        run: cat .github/workflows/ci-integration.yml
 
       # ---- Set up Python ----
       - name: Set up Python
