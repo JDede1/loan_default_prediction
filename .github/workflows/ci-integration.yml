@@ -1,4 +1,4 @@
-name: Integration Tests 
+name: Integration Tests
 
 on:
   workflow_dispatch:   # run manually from GitHub Actions tab
@@ -11,10 +11,11 @@ jobs:
     timeout-minutes: 40
 
     steps:
+      # ---- Checkout repo ----
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 🔑 Ensure docker compose plugin is installed
+      # ---- Install Docker Compose plugin ----
       - name: Install Docker Compose plugin
         run: |
           sudo apt-get update
@@ -25,43 +26,52 @@ jobs:
           docker --version
           docker compose version
 
+      # ---- Set up Python ----
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
+      # ---- Install dependencies ----
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
+      # ---- Create dummy GCS service account key (for CI only) ----
+      - name: Create dummy GCS key
+        run: |
+          mkdir -p keys airflow/keys
+          echo '{}' > keys/gcs-service-account.json
+          echo '{}' > airflow/keys/gcs-service-account.json
+
       # ---- Start stack (Airflow + MLflow + Serve) ----
       - name: Start services
         run: docker compose -f airflow/docker-compose.yaml up -d postgres webserver scheduler mlflow serve
 
-      # ---- Wait for services ----
+      # ---- Wait for services to be healthy ----
       - name: Wait for services to be healthy
         run: |
           echo "⏳ Waiting for Airflow Webserver..."
-          for i in {1..30}; do
+          for i in {1..60}; do
             curl -sf http://localhost:8080/health && break
             sleep 10
           done
 
           echo "⏳ Waiting for MLflow..."
-          for i in {1..30}; do
+          for i in {1..60}; do
             curl -sf http://localhost:5000 && break
             sleep 5
           done
 
           echo "⏳ Waiting for model serve..."
-          for i in {1..30}; do
+          for i in {1..60}; do
             curl -sf http://localhost:5001 && break
             sleep 5
           done
 
-      # ---- Run only integration tests ----
+      # ---- Run integration tests ----
       - name: Run integration tests
         env:
           RUN_INTEGRATION_TESTS: 1
