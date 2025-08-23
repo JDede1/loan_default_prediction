@@ -21,6 +21,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y docker-compose-plugin
 
+      # ---- Add docker-compose shim for backward compatibility ----
+      - name: Add docker-compose shim
+        run: |
+          sudo ln -s /usr/bin/docker /usr/local/bin/docker-compose || true
+
       - name: Show Docker & Compose versions
         run: |
           docker --version
