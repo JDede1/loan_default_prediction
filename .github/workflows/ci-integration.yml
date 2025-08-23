@@ -25,25 +25,28 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      # ---- Start stack (Airflow + MLflow) ----
-      - name: Start core services (Airflow + MLflow)
-        run: ./airflow/start_all.sh --fresh
-
-      - name: Start model serving
-        run: ./airflow/start_serve.sh
+      # ---- Start stack (Airflow + MLflow + Serve) ----
+      - name: Start services
+        run: docker-compose -f airflow/docker-compose.yaml up -d postgres webserver scheduler mlflow serve
 
       # ---- Wait for services ----
-      - name: Wait for MLflow and Serve
+      - name: Wait for services to be healthy
         run: |
-          echo "⏳ Waiting for MLflow (http://localhost:5000)..."
+          echo "⏳ Waiting for Airflow Webserver..."
           for i in {1..30}; do
-            curl -s http://localhost:5000 || true
+            curl -sf http://localhost:8080/health && break
+            sleep 10
+          done
+
+          echo "⏳ Waiting for MLflow..."
+          for i in {1..30}; do
+            curl -sf http://localhost:5000 && break
             sleep 5
           done
 
-          echo "⏳ Waiting for model serve (http://localhost:5001)..."
+          echo "⏳ Waiting for model serve..."
           for i in {1..30}; do
-            curl -s http://localhost:5001 || true
+            curl -sf http://localhost:5001 && break
             sleep 5
           done
 
@@ -54,4 +57,4 @@ jobs:
       # ---- Teardown ----
       - name: Stop services
         if: always()
-        run: ./airflow/stop_all.sh --fresh
+        run: docker-compose -f airflow/docker-compose.yaml down -v
