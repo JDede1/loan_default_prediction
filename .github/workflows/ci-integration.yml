@@ -27,7 +27,7 @@ jobs:
 
       # ---- Start stack (Airflow + MLflow + Serve) ----
       - name: Start services
-        run: docker-compose -f airflow/docker-compose.yaml up -d postgres webserver scheduler mlflow serve
+        run: docker compose -f airflow/docker-compose.yaml up -d postgres webserver scheduler mlflow serve
 
       # ---- Wait for services ----
       - name: Wait for services to be healthy
@@ -57,4 +57,4 @@ jobs:
       # ---- Teardown ----
       - name: Stop services
         if: always()
-        run: docker-compose -f airflow/docker-compose.yaml down -v
+        run: docker compose -f airflow/docker-compose.yaml down -v
