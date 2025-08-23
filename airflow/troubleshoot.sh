@@ -8,7 +8,7 @@ echo "🔍 Airflow, MLflow & Serving Troubleshooting Script"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="$REPO_ROOT/.env"
-COMPOSE_FILE="$REPO_ROOT/airflow/docker compose.yaml"
+COMPOSE_FILE="$REPO_ROOT/airflow/docker-compose.yaml"
 
 MLRUNS_DIR="$REPO_ROOT/mlruns"
 ARTIFACTS_DIR="$REPO_ROOT/artifacts"
@@ -21,7 +21,7 @@ echo "🔍 STEP 1: Checking Docker Compose service status..."
 docker compose -f "$COMPOSE_FILE" ps
 
 echo
-echo "📋 STEP 2: Listing all services from docker compose.yaml..."
+echo "📋 STEP 2: Listing all services from docker-compose.yaml..."
 services=$(docker compose -f "$COMPOSE_FILE" config --services)
 
 for service in $services; do

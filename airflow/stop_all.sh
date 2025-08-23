@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="$REPO_ROOT/.env"
-COMPOSE_FILE="$REPO_ROOT/airflow/docker compose.yaml"
+COMPOSE_FILE="$REPO_ROOT/airflow/docker-compose.yaml"
 
 MLRUNS_DIR="$REPO_ROOT/mlruns"
 ARTIFACTS_DIR="$REPO_ROOT/artifacts"

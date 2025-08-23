@@ -5,7 +5,7 @@ set -euo pipefail
 # Resolve repo root dynamically (works from anywhere)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-COMPOSE_FILE="$REPO_ROOT/airflow/docker compose.yaml"
+COMPOSE_FILE="$REPO_ROOT/airflow/docker-compose.yaml"
 
 echo "🛑 Stopping model serving (REST API)..."
 
