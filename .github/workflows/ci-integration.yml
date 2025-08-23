@@ -11,32 +11,24 @@ jobs:
     timeout-minutes: 40
 
     steps:
-      # ---- Checkout code ----
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ---- Debug: show workflow content being used ----
-      - name: Debug workflow file
-        run: cat .github/workflows/ci-integration.yml
+      - name: Show Docker & Compose versions
+        run: |
+          docker --version
+          docker compose version
 
-      # ---- Set up Python ----
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      # ---- Install dependencies ----
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
-
-      # ---- Verify Docker & Compose ----
-      - name: Show Docker & Compose versions
-        run: |
-          docker --version
-          docker compose version
 
       # ---- Start stack (Airflow + MLflow + Serve) ----
       - name: Start services
@@ -66,7 +58,7 @@ jobs:
       # ---- Run only integration tests ----
       - name: Run integration tests
         env:
-          RUN_INTEGRATION_TESTS: 1   # ensures pytest won’t skip integration tests
+          RUN_INTEGRATION_TESTS: 1
         run: pytest -m integration -v
 
       # ---- Always teardown ----
