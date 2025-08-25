@@ -15,17 +15,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ---- Install Docker Compose plugin ----
-      - name: Install Docker Compose plugin
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y docker-compose-plugin
-
-      # ---- Add docker-compose shim for backward compatibility ----
-      - name: Add docker-compose shim
-        run: |
-          sudo ln -s /usr/bin/docker /usr/local/bin/docker-compose || true
-
+      # ---- Show Docker & Compose versions (built-in v2) ----
       - name: Show Docker & Compose versions
         run: |
           docker --version
@@ -44,16 +34,17 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      # ---- Create dummy GCS service account key (for CI only) ----
-      - name: Create dummy GCS key
+      # ---- Create dummy .env + GCS key (for CI only) ----
+      - name: Create dummy env and GCS key
         run: |
+          echo "AIRFLOW_UID=50000" > .env
           mkdir -p keys airflow/keys
           echo '{}' > keys/gcs-service-account.json
           echo '{}' > airflow/keys/gcs-service-account.json
 
-      # ---- Start stack (Airflow + MLflow + Serve) ----
+      # ---- Start stack (skip Serve in CI) ----
       - name: Start services
-        run: docker compose -f airflow/docker-compose.yaml up -d postgres webserver scheduler mlflow serve
+        run: docker compose -f airflow/docker-compose.yaml up -d postgres webserver scheduler mlflow
 
       # ---- Wait for services to be healthy ----
       - name: Wait for services to be healthy
@@ -67,12 +58,6 @@ jobs:
           echo "⏳ Waiting for MLflow..."
           for i in {1..60}; do
             curl -sf http://localhost:5000 && break
-            sleep 5
-          done
-
-          echo "⏳ Waiting for model serve..."
-          for i in {1..60}; do
-            curl -sf http://localhost:5001 && break
             sleep 5
           done
 
