@@ -11,17 +11,17 @@ jobs:
     timeout-minutes: 40
 
     steps:
-      # Checkout repo
+      # Checkout code
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Show Docker + Compose versions
+      # Show preinstalled Docker + Compose v2
       - name: Show Docker & Compose versions
         run: |
           docker --version
           docker compose version
 
-      # Python setup
+      # Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -34,21 +34,42 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      # Minimal env + dummy GCS key
+      # Minimal env + dummy key so mounts work
       - name: Create dummy .env and GCS key
         run: |
-          echo "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow" > .env
-          echo "AIRFLOW_UID=50000" >> .env
-          mkdir -p keys airflow/keys airflow/logs airflow/artifacts mlruns artifacts
+          echo "AIRFLOW_UID=50000" > .env
+          mkdir -p keys airflow/keys
           echo '{}' > keys/gcs-service-account.json
           echo '{}' > airflow/keys/gcs-service-account.json
 
-      # 🔧 Fix permissions so Airflow & MLflow can write
+      # 🔧 Fix permissions so Airflow & MLflow can write to volumes
       - name: Fix permissions for CI volumes
         run: |
-          chmod -R 777 airflow/logs airflow/artifacts mlruns artifacts
+          mkdir -p airflow/logs airflow/artifacts airflow/tmp mlruns artifacts
+          chmod -R 777 airflow/logs airflow/artifacts airflow/tmp mlruns artifacts
 
-      # Start Postgres first
+      # 📋 Diagnostics: show directories and permissions before services start
+      - name: Show volume ownership
+        run: |
+          echo "=== airflow/ directory ==="
+          ls -l airflow
+          echo
+          echo "=== airflow/logs ==="
+          ls -ld airflow/logs
+          echo
+          echo "=== airflow/artifacts ==="
+          ls -ld airflow/artifacts
+          echo
+          echo "=== airflow/tmp ==="
+          ls -ld airflow/tmp
+          echo
+          echo "=== mlruns ==="
+          ls -ld mlruns
+          echo
+          echo "=== artifacts ==="
+          ls -ld artifacts
+
+      # Bring up Postgres first
       - name: Start Postgres
         run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d postgres
 
@@ -56,62 +77,64 @@ jobs:
       - name: Initialize Airflow DB
         run: docker compose --env-file .env -f airflow/docker-compose.yaml run --rm airflow-init
 
-      # Start Airflow + MLflow + Serve
+      # Now bring up core services including serve
       - name: Start services (webserver, scheduler, mlflow, serve)
         run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d webserver scheduler mlflow serve
 
-      # Wait until services are healthy
+      # Wait for health
       - name: Wait for services to be healthy
         run: |
           echo "⏳ Waiting for Airflow webserver…"
+          ok=0
           for i in {1..60}; do
-            if curl -sf http://localhost:8080/health | grep -q '"status":"healthy"'; then exit 0; fi
+            if curl -sf http://localhost:8080/health | grep -q '"status":"healthy"'; then ok=1; break; fi
             sleep 5
           done
-          echo "Airflow webserver did not become healthy"; exit 1
+          [ "$ok" -eq 1 ] || { echo "Airflow webserver did not become healthy"; exit 1; }
 
           echo "⏳ Waiting for MLflow…"
+          ok=0
           for i in {1..60}; do
-            curl -sf http://localhost:5000 >/dev/null && exit 0
+            curl -sf http://localhost:5000 >/dev/null && ok=1 && break
             sleep 3
           done
-          echo "MLflow did not become reachable"; exit 1
+          [ "$ok" -eq 1 ] || { echo "MLflow did not become reachable"; exit 1; }
 
           echo "⏳ Waiting for Serve…"
+          ok=0
           for i in {1..60}; do
-            curl -sf http://localhost:5001/invocations -H "Content-Type: application/json" \
-              -d '{"dataframe_split": {"columns": [], "data": []}}' | grep -q 'error_code' && exit 0
+            curl -sf http://localhost:5001/invocations -H "Content-Type: application/json" -d '{"dataframe_split": {"columns": [], "data": []}}' | grep -q 'error_code' && ok=1 && break
             sleep 3
           done
-          echo "Serve API did not become reachable"; exit 1
+          [ "$ok" -eq 1 ] || { echo "Serve API did not become reachable"; exit 1; }
 
-      # Run integration tests inside webserver container
+      # Run integration tests inside webserver (via Makefile target)
       - name: Run integration tests
         run: make integration-tests
 
-      # Dump logs if failure
+      # If anything failed, dump diagnostics
       - name: Diagnostics (ps + last logs)
         if: failure()
         run: |
           echo "==== docker compose ps ===="
           docker compose -f airflow/docker-compose.yaml ps
           echo
-          echo "==== webserver logs ===="
+          echo "==== webserver logs (tail) ===="
           docker compose -f airflow/docker-compose.yaml logs --tail=200 webserver || true
           echo
-          echo "==== scheduler logs ===="
+          echo "==== scheduler logs (tail) ===="
           docker compose -f airflow/docker-compose.yaml logs --tail=200 scheduler || true
           echo
-          echo "==== mlflow logs ===="
+          echo "==== mlflow logs (tail) ===="
           docker compose -f airflow/docker-compose.yaml logs --tail=200 mlflow || true
           echo
-          echo "==== serve logs ===="
+          echo "==== serve logs (tail) ===="
           docker compose -f airflow/docker-compose.yaml logs --tail=200 serve || true
           echo
-          echo "==== postgres logs ===="
+          echo "==== postgres logs (tail) ===="
           docker compose -f airflow/docker-compose.yaml logs --tail=100 postgres || true
 
-      # Always shut down
+      # Always down
       - name: Stop services
         if: always()
         run: docker compose --env-file .env -f airflow/docker-compose.yaml down -v
