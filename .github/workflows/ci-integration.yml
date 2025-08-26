@@ -52,6 +52,7 @@ jobs:
       - name: Fix permissions for CI volumes
         run: |
           mkdir -p airflow/logs airflow/artifacts mlruns artifacts airflow/tmp
+          sudo chown -R 50000:0 airflow/logs airflow/artifacts mlruns artifacts airflow/tmp
           chmod -R 777 airflow/logs airflow/artifacts mlruns artifacts airflow/tmp
 
       # Start Postgres
