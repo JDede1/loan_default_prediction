@@ -37,16 +37,16 @@ jobs:
       # Dummy env + CI overrides
       - name: Create CI .env and dummy GCS key
         run: |
-          # Base env
-          echo "AIRFLOW_UID=0" > .env   # run as root in CI
+          # Force root user in CI
+          echo "AIRFLOW_UID=0" > .env
           echo "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow" >> .env
           echo "AIRFLOW__WEBSERVER__WORKER_TMP_DIR=/opt/airflow/tmp" >> .env
           echo "MLFLOW_TRACKING_URI=http://mlflow:5000" >> .env
-          echo "MLFLOW_ARTIFACT_URI=file:/opt/airflow/mlruns" >> .env   # local backend in CI
+          echo "MLFLOW_ARTIFACT_URI=file:/opt/airflow/mlruns" >> .env
           echo "GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json" >> .env
           echo "GCS_BUCKET=dummy-ci-bucket" >> .env
 
-          # Dummy GCS key (empty but valid JSON)
+          # Dummy but valid JSON key
           mkdir -p keys airflow/keys
           echo '{"dummy":"true"}' > keys/gcs-service-account.json
           echo '{"dummy":"true"}' > airflow/keys/gcs-service-account.json
@@ -79,12 +79,12 @@ jobs:
       - name: Initialize Airflow DB
         run: docker compose --env-file .env -f airflow/docker-compose.yaml run --rm airflow-init
 
-      # Start services
-      - name: Start services (webserver, scheduler, mlflow, serve)
-        run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d webserver scheduler mlflow serve
+      # Start webserver, scheduler, mlflow (without serve yet)
+      - name: Start Airflow + MLflow (no serve yet)
+        run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d webserver scheduler mlflow
 
-      # Health checks
-      - name: Wait for services to be healthy
+      # Health checks for Airflow + MLflow
+      - name: Wait for Airflow + MLflow to be healthy
         run: |
           echo "⏳ Waiting for Airflow webserver…"
           ok=0
@@ -102,6 +102,21 @@ jobs:
           done
           [ "$ok" -eq 1 ] || { echo "❌ MLflow did not become reachable"; exit 1; }
 
+      # Bootstrap: Train + register a model in CI
+      - name: Bootstrap MLflow model (register dummy model)
+        run: |
+          docker compose --env-file .env -f airflow/docker-compose.yaml run --rm webserver \
+            python src/train_with_mlflow.py \
+              --data_path /opt/airflow/data/loan_default_selected_features_clean.csv \
+              --model_name loan_default_model --alias staging
+
+      # Now start model-serve
+      - name: Start model-serve
+        run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d serve
+
+      # Health check for serve
+      - name: Wait for Serve API to be healthy
+        run: |
           echo "⏳ Waiting for Serve…"
           ok=0
           for i in {1..60}; do
