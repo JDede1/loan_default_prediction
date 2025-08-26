@@ -55,9 +55,9 @@ jobs:
           mkdir -p airflow/logs airflow/artifacts mlruns artifacts airflow/tmp
           chmod -R 777 airflow/logs airflow/artifacts mlruns artifacts airflow/tmp
 
-      # Build images
+      # Build images (force rebuild to avoid stale cache)
       - name: Build Docker images
-        run: docker compose --env-file .env -f airflow/docker-compose.yaml build
+        run: docker compose --env-file .env -f airflow/docker-compose.yaml build --no-cache
 
       # Start Postgres
       - name: Start Postgres
