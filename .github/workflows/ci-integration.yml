@@ -42,6 +42,12 @@ jobs:
           echo '{}' > keys/gcs-service-account.json
           echo '{}' > airflow/keys/gcs-service-account.json
 
+      # 🔧 Fix permissions so Airflow & MLflow can write to volumes
+      - name: Fix permissions for CI volumes
+        run: |
+          mkdir -p airflow/logs airflow/artifacts mlruns artifacts
+          chmod -R 777 airflow/logs airflow/artifacts mlruns artifacts
+
       # Bring up Postgres first
       - name: Start Postgres
         run: docker compose -f airflow/docker-compose.yaml up -d postgres
