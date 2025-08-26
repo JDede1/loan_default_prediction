@@ -38,13 +38,15 @@ services:
     user: "${AIRFLOW_UID:-50000}:0"
     env_file:
       - ../.env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
     entrypoint: /bin/bash
     command:
       - -c
       - |
-        mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs
-        chown -R airflow:root /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs
-        chmod -R 775 /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs
+        mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs /opt/airflow/tmp
+        chown -R airflow:root /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs /opt/airflow/tmp
+        chmod -R 775 /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs /opt/airflow/tmp
         gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
         airflow db init &&
         bash /opt/airflow/create_airflow_user.sh || true
@@ -53,7 +55,7 @@ services:
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
       - ../tests:/opt/airflow/tests
-      - ../pytest.ini:/opt/airflow/pytest.ini:ro     # ✅ mount pytest.ini
+      - ../pytest.ini:/opt/airflow/pytest.ini:ro
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
       - airflow-logs:/home/airflow/logs
@@ -74,14 +76,16 @@ services:
     user: "${AIRFLOW_UID:-50000}:0"
     env_file:
       - ../.env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
     entrypoint: /bin/bash
     command:
       - -c
       - |
         rm -f /home/airflow/airflow-webserver.pid || true
-        mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
-        chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
-        chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
+        mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
+        chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
+        chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
         gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
         exec airflow webserver
     ports:
@@ -91,7 +95,7 @@ services:
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
       - ../tests:/opt/airflow/tests
-      - ../pytest.ini:/opt/airflow/pytest.ini:ro     # ✅ mount pytest.ini
+      - ../pytest.ini:/opt/airflow/pytest.ini:ro
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
       - airflow-logs:/home/airflow/logs
@@ -118,13 +122,15 @@ services:
     user: "${AIRFLOW_UID:-50000}:0"
     env_file:
       - ../.env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
     entrypoint: /bin/bash
     command:
       - -c
       - |
-        mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
-        chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
-        chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts
+        mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
+        chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
+        chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
         gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
         exec airflow scheduler
     volumes:
@@ -132,7 +138,7 @@ services:
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
       - ../tests:/opt/airflow/tests
-      - ../pytest.ini:/opt/airflow/pytest.ini:ro     # ✅ mount pytest.ini
+      - ../pytest.ini:/opt/airflow/pytest.ini:ro
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
       - airflow-logs:/home/airflow/logs
