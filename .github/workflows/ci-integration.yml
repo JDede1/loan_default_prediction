@@ -11,14 +11,17 @@ jobs:
     timeout-minutes: 40
 
     steps:
+      # Checkout repo
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Show Docker versions
       - name: Show Docker & Compose versions
         run: |
           docker --version
           docker compose version
 
+      # Python setup
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -31,6 +34,7 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
+      # Dummy env + dummy key
       - name: Create dummy .env and GCS key
         run: |
           echo "AIRFLOW_UID=50000" > .env
@@ -44,14 +48,17 @@ jobs:
           echo '{}' > keys/gcs-service-account.json
           echo '{}' > airflow/keys/gcs-service-account.json
 
+      # Permissions for mounted volumes
       - name: Fix permissions for CI volumes
         run: |
           mkdir -p airflow/logs airflow/artifacts mlruns artifacts airflow/tmp
           chmod -R 777 airflow/logs airflow/artifacts mlruns artifacts airflow/tmp
 
+      # Start Postgres
       - name: Start Postgres
         run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d postgres
 
+      # Wait for Postgres to be healthy
       - name: Wait for Postgres
         run: |
           echo "⏳ Waiting for Postgres..."
@@ -65,12 +72,15 @@ jobs:
           echo "❌ Postgres did not become healthy in time"
           exit 1
 
+      # Init Airflow DB
       - name: Initialize Airflow DB
         run: docker compose --env-file .env -f airflow/docker-compose.yaml run --rm airflow-init
 
+      # Start services
       - name: Start services (webserver, scheduler, mlflow, serve)
         run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d webserver scheduler mlflow serve
 
+      # Health checks
       - name: Wait for services to be healthy
         run: |
           echo "⏳ Waiting for Airflow webserver…"
@@ -97,12 +107,15 @@ jobs:
           done
           [ "$ok" -eq 1 ] || { echo "❌ Serve API did not become reachable"; exit 1; }
 
+      # Run integration tests
       - name: Run integration tests (Makefile target)
         run: make integration-tests
 
+      # DAG import check
       - name: Run DAG import check with pytest
         run: docker compose -f airflow/docker-compose.yaml exec -T webserver pytest -q
 
+      # Diagnostics on failure
       - name: Diagnostics (ps + last logs)
         if: failure()
         run: |
@@ -124,6 +137,7 @@ jobs:
           echo "==== postgres logs (tail) ===="
           docker compose -f airflow/docker-compose.yaml logs --tail=100 postgres || true
 
+      # Always clean up
       - name: Stop services
         if: always()
         run: docker compose --env-file .env -f airflow/docker-compose.yaml down -v
