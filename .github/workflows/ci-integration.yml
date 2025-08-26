@@ -48,12 +48,10 @@ jobs:
           echo '{}' > keys/gcs-service-account.json
           echo '{}' > airflow/keys/gcs-service-account.json
 
-      # Permissions for mounted volumes
-      - name: Fix permissions for CI volumes
+      # Prepare CI volumes (no chmod needed)
+      - name: Prepare CI volumes
         run: |
           mkdir -p airflow/logs airflow/artifacts mlruns artifacts airflow/tmp
-          sudo chown -R 50000:0 airflow/logs airflow/artifacts mlruns artifacts airflow/tmp
-          chmod -R 777 airflow/logs airflow/artifacts mlruns artifacts airflow/tmp
 
       # Start Postgres
       - name: Start Postgres
