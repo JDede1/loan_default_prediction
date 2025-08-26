@@ -37,7 +37,6 @@ jobs:
       # Dummy env + CI overrides
       - name: Create CI .env and dummy GCS key
         run: |
-          # Force root user in CI
           echo "AIRFLOW_UID=0" > .env
           echo "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow" >> .env
           echo "AIRFLOW__WEBSERVER__WORKER_TMP_DIR=/opt/airflow/tmp" >> .env
@@ -46,7 +45,6 @@ jobs:
           echo "GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json" >> .env
           echo "GCS_BUCKET=dummy-ci-bucket" >> .env
 
-          # Dummy but valid JSON key
           mkdir -p keys airflow/keys
           echo '{"dummy":"true"}' > keys/gcs-service-account.json
           echo '{"dummy":"true"}' > airflow/keys/gcs-service-account.json
@@ -56,6 +54,10 @@ jobs:
         run: |
           mkdir -p airflow/logs airflow/artifacts mlruns artifacts airflow/tmp
           chmod -R 777 airflow/logs airflow/artifacts mlruns artifacts airflow/tmp
+
+      # Build images
+      - name: Build Docker images
+        run: docker compose --env-file .env -f airflow/docker-compose.yaml build
 
       # Start Postgres
       - name: Start Postgres
@@ -79,8 +81,8 @@ jobs:
       - name: Initialize Airflow DB
         run: docker compose --env-file .env -f airflow/docker-compose.yaml run --rm airflow-init
 
-      # Start webserver, scheduler, mlflow (without serve yet)
-      - name: Start Airflow + MLflow (no serve yet)
+      # Start Airflow + MLflow (no serve yet)
+      - name: Start Airflow + MLflow
         run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d webserver scheduler mlflow
 
       # Health checks for Airflow + MLflow
@@ -102,7 +104,7 @@ jobs:
           done
           [ "$ok" -eq 1 ] || { echo "❌ MLflow did not become reachable"; exit 1; }
 
-      # Bootstrap: Train + register a model in CI
+      # Bootstrap: Train + register a model
       - name: Bootstrap MLflow model (register dummy model)
         run: |
           docker compose --env-file .env -f airflow/docker-compose.yaml run --rm webserver \
@@ -110,7 +112,7 @@ jobs:
               --data_path /opt/airflow/data/loan_default_selected_features_clean.csv \
               --model_name loan_default_model --alias staging
 
-      # Now start model-serve
+      # Start model-serve
       - name: Start model-serve
         run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d serve
 

@@ -48,8 +48,10 @@ services:
         mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs /opt/airflow/tmp
         chown -R airflow:root /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs /opt/airflow/tmp
         chmod -R 775 /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs /opt/airflow/tmp
-        if [ -s /opt/airflow/keys/gcs-service-account.json ]; then
+        if jq -e '.client_email' /opt/airflow/keys/gcs-service-account.json >/dev/null 2>&1; then
           gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
+        else
+          echo "⚠️ Skipping gcloud auth (dummy or invalid key detected)"
         fi
         airflow db init &&
         bash /opt/airflow/create_airflow_user.sh || true
@@ -90,8 +92,10 @@ services:
         mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
         chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
         chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        if [ -s /opt/airflow/keys/gcs-service-account.json ]; then
+        if jq -e '.client_email' /opt/airflow/keys/gcs-service-account.json >/dev/null 2>&1; then
           gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
+        else
+          echo "⚠️ Skipping gcloud auth (dummy or invalid key detected)"
         fi
         exec airflow webserver
     ports:
@@ -138,8 +142,10 @@ services:
         mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
         chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
         chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        if [ -s /opt/airflow/keys/gcs-service-account.json ]; then
+        if jq -e '.client_email' /opt/airflow/keys/gcs-service-account.json >/dev/null 2>&1; then
           gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
+        else
+          echo "⚠️ Skipping gcloud auth (dummy or invalid key detected)"
         fi
         exec airflow scheduler
     volumes:
