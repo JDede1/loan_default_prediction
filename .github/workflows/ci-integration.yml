@@ -50,15 +50,15 @@ jobs:
 
       # Bring up Postgres first
       - name: Start Postgres
-        run: docker compose -f airflow/docker-compose.yaml up -d postgres
+        run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d postgres
 
       # Initialize Airflow DB
       - name: Initialize Airflow DB
-        run: docker compose -f airflow/docker-compose.yaml run --rm airflow-init
+        run: docker compose --env-file .env -f airflow/docker-compose.yaml run --rm airflow-init
 
       # Now bring up core services including serve
       - name: Start services (webserver, scheduler, mlflow, serve)
-        run: docker compose -f airflow/docker-compose.yaml up -d webserver scheduler mlflow serve
+        run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d webserver scheduler mlflow serve
 
       # Wait for health
       - name: Wait for services to be healthy
@@ -116,4 +116,4 @@ jobs:
       # Always down
       - name: Stop services
         if: always()
-        run: docker compose -f airflow/docker-compose.yaml down -v
+        run: docker compose --env-file .env -f airflow/docker-compose.yaml down -v
