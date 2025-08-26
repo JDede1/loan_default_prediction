@@ -11,17 +11,17 @@ jobs:
     timeout-minutes: 40
 
     steps:
-      # Checkout
+      # Checkout repo
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Show preinstalled Docker + Compose v2
+      # Show Docker + Compose versions
       - name: Show Docker & Compose versions
         run: |
           docker --version
           docker compose version
 
-      # Python
+      # Python setup
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -34,21 +34,21 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      # Minimal env + dummy key so mounts work
+      # Minimal env + dummy GCS key
       - name: Create dummy .env and GCS key
         run: |
-          echo "AIRFLOW_UID=50000" > .env
-          mkdir -p keys airflow/keys
+          echo "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow" > .env
+          echo "AIRFLOW_UID=50000" >> .env
+          mkdir -p keys airflow/keys airflow/logs airflow/artifacts mlruns artifacts
           echo '{}' > keys/gcs-service-account.json
           echo '{}' > airflow/keys/gcs-service-account.json
 
-      # 🔧 Fix permissions so Airflow & MLflow can write to volumes
+      # 🔧 Fix permissions so Airflow & MLflow can write
       - name: Fix permissions for CI volumes
         run: |
-          mkdir -p airflow/logs airflow/artifacts mlruns artifacts
           chmod -R 777 airflow/logs airflow/artifacts mlruns artifacts
 
-      # Bring up Postgres first
+      # Start Postgres first
       - name: Start Postgres
         run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d postgres
 
@@ -56,64 +56,62 @@ jobs:
       - name: Initialize Airflow DB
         run: docker compose --env-file .env -f airflow/docker-compose.yaml run --rm airflow-init
 
-      # Now bring up core services including serve
+      # Start Airflow + MLflow + Serve
       - name: Start services (webserver, scheduler, mlflow, serve)
         run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d webserver scheduler mlflow serve
 
-      # Wait for health
+      # Wait until services are healthy
       - name: Wait for services to be healthy
         run: |
           echo "⏳ Waiting for Airflow webserver…"
-          ok=0
           for i in {1..60}; do
-            if curl -sf http://localhost:8080/health | grep -q '"status":"healthy"'; then ok=1; break; fi
+            if curl -sf http://localhost:8080/health | grep -q '"status":"healthy"'; then exit 0; fi
             sleep 5
           done
-          [ "$ok" -eq 1 ] || { echo "Airflow webserver did not become healthy"; exit 1; }
+          echo "Airflow webserver did not become healthy"; exit 1
 
           echo "⏳ Waiting for MLflow…"
-          ok=0
           for i in {1..60}; do
-            curl -sf http://localhost:5000 >/dev/null && ok=1 && break
+            curl -sf http://localhost:5000 >/dev/null && exit 0
             sleep 3
           done
-          [ "$ok" -eq 1 ] || { echo "MLflow did not become reachable"; exit 1; }
+          echo "MLflow did not become reachable"; exit 1
 
           echo "⏳ Waiting for Serve…"
-          ok=0
           for i in {1..60}; do
-            curl -sf http://localhost:5001/invocations -H "Content-Type: application/json" -d '{"dataframe_split": {"columns": [], "data": []}}' | grep -q 'error_code' && ok=1 && break
+            curl -sf http://localhost:5001/invocations -H "Content-Type: application/json" \
+              -d '{"dataframe_split": {"columns": [], "data": []}}' | grep -q 'error_code' && exit 0
             sleep 3
           done
-          [ "$ok" -eq 1 ] || { echo "Serve API did not become reachable"; exit 1; }
+          echo "Serve API did not become reachable"; exit 1
 
-      # Run integration tests inside webserver (via Makefile target)
+      # Run integration tests inside webserver container
       - name: Run integration tests
         run: make integration-tests
 
-      # If anything failed, dump diagnostics
+      # Dump logs if failure
       - name: Diagnostics (ps + last logs)
         if: failure()
         run: |
           echo "==== docker compose ps ===="
           docker compose -f airflow/docker-compose.yaml ps
           echo
-          echo "==== webserver logs (tail) ===="
+          echo "==== webserver logs ===="
           docker compose -f airflow/docker-compose.yaml logs --tail=200 webserver || true
           echo
-          echo "==== scheduler logs (tail) ===="
+          echo "==== scheduler logs ===="
           docker compose -f airflow/docker-compose.yaml logs --tail=200 scheduler || true
           echo
-          echo "==== mlflow logs (tail) ===="
+          echo "==== mlflow logs ===="
           docker compose -f airflow/docker-compose.yaml logs --tail=200 mlflow || true
           echo
-          echo "==== serve logs (tail) ===="
+          echo "==== serve logs ===="
           docker compose -f airflow/docker-compose.yaml logs --tail=200 serve || true
           echo
-          echo "==== postgres logs (tail) ===="
+          echo "==== postgres logs ===="
           docker compose -f airflow/docker-compose.yaml logs --tail=100 postgres || true
 
-      # Always down
+      # Always shut down
       - name: Stop services
         if: always()
         run: docker compose --env-file .env -f airflow/docker-compose.yaml down -v
