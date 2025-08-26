@@ -35,7 +35,7 @@ jobs:
         run: |
           echo "AIRFLOW_UID=50000" > .env
           echo "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow" >> .env
-          echo "AIRFLOW__WEBSERVER__WORKER_TMP_DIR=/home/airflow/tmp" >> .env
+          echo "AIRFLOW__WEBSERVER__WORKER_TMP_DIR=/opt/airflow/tmp" >> .env
           echo "MLFLOW_TRACKING_URI=http://mlflow:5000" >> .env
           echo "MLFLOW_ARTIFACT_URI=file:/opt/airflow/mlruns" >> .env
           echo "GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json" >> .env

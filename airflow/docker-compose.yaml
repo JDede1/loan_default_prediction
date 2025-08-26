@@ -5,6 +5,7 @@ volumes:
   airflow-logs:
   mlflow-runs:        # still used for backend store
   airflow-artifacts:
+  airflow-tmp:        # ✅ new volume for tmp dir
 
 networks:
   airflow:
@@ -47,7 +48,9 @@ services:
         mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs /opt/airflow/tmp
         chown -R airflow:root /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs /opt/airflow/tmp
         chmod -R 775 /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs /opt/airflow/tmp
-        gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
+        if [ -s /opt/airflow/keys/gcs-service-account.json ]; then
+          gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
+        fi
         airflow db init &&
         bash /opt/airflow/create_airflow_user.sh || true
     volumes:
@@ -59,6 +62,7 @@ services:
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
       - airflow-logs:/home/airflow/logs
+      - airflow-tmp:/opt/airflow/tmp
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     depends_on:
       postgres:
@@ -86,7 +90,9 @@ services:
         mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
         chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
         chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
+        if [ -s /opt/airflow/keys/gcs-service-account.json ]; then
+          gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
+        fi
         exec airflow webserver
     ports:
       - "8080:8080"
@@ -99,6 +105,7 @@ services:
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
       - airflow-logs:/home/airflow/logs
+      - airflow-tmp:/opt/airflow/tmp
       - /var/run/docker.sock:/var/run/docker.sock
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     depends_on:
@@ -131,7 +138,9 @@ services:
         mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
         chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
         chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
+        if [ -s /opt/airflow/keys/gcs-service-account.json ]; then
+          gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
+        fi
         exec airflow scheduler
     volumes:
       - ./:/opt/airflow
@@ -142,6 +151,7 @@ services:
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
       - airflow-logs:/home/airflow/logs
+      - airflow-tmp:/opt/airflow/tmp
       - /var/run/docker.sock:/var/run/docker.sock
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     depends_on:
