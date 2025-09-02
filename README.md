@@ -1,14 +1,12 @@
----
-```markdown
-![CI](https://github.com/JDede1/loan_default_prediction/actions/workflows/ci.yml/badge.svg)
-```
+[![CI](https://github.com/JDede1/loan_default_prediction/actions/workflows/ci.yml/badge.svg)](https://github.com/JDede1/loan_default_prediction/actions/workflows/ci.yml)
 
----
+<!--
+[![Integration](https://github.com/JDede1/loan_default_prediction/actions/workflows/ci-integration.yml/badge.svg)](https://github.com/JDede1/loan_default_prediction/actions/workflows/ci-integration.yml)
+-->
+
 # 🏦 Loan Default Prediction – End-to-End MLOps Project
 
 This project implements an **end-to-end MLOps pipeline** for predicting loan defaults using the [LendingClub dataset](https://www.kaggle.com/wordsforthewise/lending-club). The goal is to help financial institutions and lenders **assess borrower risk** and make more informed lending decisions.
-
----
 
 
 ---
@@ -655,7 +653,7 @@ flowchart TD
     D --> E[CI badge reflects latest status]
 
 
-    A --> F{Integration trigger? <br/>(manual / label / schedule)}
+    A --> F{Integration trigger? (manual / label / schedule)}
     F -->|yes| G[Spin up stack via docker-compose]
     G --> H[Health checks: Airflow & Serve]
     H --> I[Integration tests]
@@ -769,15 +767,15 @@ For quick starts, some projects use `roles/storage.admin` (broader than necessar
 
 ```mermaid
 flowchart TD
-    subgraph GCP["☁️ Google Cloud Platform"]
-        SA["🔑 Service Account (IAM)"]
-        GCS["🗄️ GCS Bucket (loan-default-artifacts-loan-default-mlops)"]
-    end
+  subgraph GCP["Google Cloud Platform"]
+    SA["Service Account (IAM)"]
+    GCS["GCS bucket: loan-default-artifacts-loan-default-mlops"]
+  end
 
-    TF["🧰 Terraform (dockerized via make)"] -->|terraform apply| GCP
-    Airflow["🌀 Airflow DAGs"] -->|read/write predictions & reports| GCS
-    MLflow["📦 MLflow Tracking/Registry"] -->|store model artifacts| GCS
-    Serve["🚀 MLflow Serving"] -->|loads model from Registry (artifacts in GCS)| GCS
+  TF["Terraform (dockerized via make)"] -->|apply| GCP
+  Airflow["Airflow DAGs"] -->|read write| GCS
+  MLflow["MLflow Tracking / Registry"] -->|artifacts| GCS
+  Serve["MLflow Serving"] -->|load via registry| GCS
 ```
 ---
 
