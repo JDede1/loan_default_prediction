@@ -1,5 +1,4 @@
 # syntax=docker/dockerfile:1
-
 FROM python:3.10-slim
 
 # Install system dependencies
@@ -21,11 +20,12 @@ COPY requirements.serve.txt .
 RUN pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.serve.txt
 
-# 👇 Ensure GCS dependencies are installed (in case they're missing from requirements.serve.txt)
+# Ensure GCS dependencies are installed (safety net if not pinned)
 RUN pip install --no-cache-dir google-cloud-storage gcsfs
 
-# 👇 Point to Airflow mlruns folder inside container
-ENV MLFLOW_TRACKING_URI=file:/app/airflow/mlruns
+# Copy entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Create non-root user
 RUN useradd -m -u 10001 appuser \
@@ -33,11 +33,14 @@ RUN useradd -m -u 10001 appuser \
     && chown -R appuser:appuser /app
 USER appuser
 
-# Expose port 5001 to match integration tests
+# Expose port (matches default PORT env)
 EXPOSE 5001
 
-# Leave entrypoint flexible
-ENTRYPOINT []
-CMD []
+# Use entrypoint for flexible model serving
+ENTRYPOINT ["/app/entrypoint.sh"]
 
+# Default environment values (can be overridden at runtime)
+ENV MODEL_NAME=loan_default_model
+ENV MODEL_ALIAS=staging
+ENV PORT=5001
 ENV GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json

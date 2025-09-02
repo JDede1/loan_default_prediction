@@ -7,7 +7,7 @@ matplotlib==3.6.3
 joblib==1.4.2
 
 # === MLflow ===
-mlflow==2.12.1
+mlflow==3.1.4
 
 # === Web / API helpers ===
 Flask==2.2.5

@@ -1,7 +1,13 @@
 ---
+```markdown
+![CI](https://github.com/JDede1/loan_default_prediction/actions/workflows/ci.yml/badge.svg)
+```
+
+---
 # 🏦 Loan Default Prediction – End-to-End MLOps Project
 
 This project implements an **end-to-end MLOps pipeline** for predicting loan defaults using the [LendingClub dataset](https://www.kaggle.com/wordsforthewise/lending-club). The goal is to help financial institutions and lenders **assess borrower risk** and make more informed lending decisions.
+
 ---
 
 
@@ -40,12 +46,33 @@ The pipeline covers the full machine learning lifecycle:
 
 
 ---
-## 📊Dataset
+## 📊 Dataset
 
-* **Source**: LendingClub Loan Dataset (public via Kaggle).
-* **Cleaned version**: `gs://loan-default-artifacts-loan-default-mlops/data/loan_default_selected_features_clean.csv`
-* **Features**: loan amount, interest rate, credit grade, revolving balance, etc.
-* **Target variable**: `loan_status` (defaulted vs non-defaulted).
+* **Source:** LendingClub Loan Dataset (public via Kaggle).
+* **Target:** `loan_status` (binary: default vs. non-default).
+* **Storage (single, consistent bucket):** `gs://loan-default-artifacts-loan-default-mlops/`
+
+**Canonical paths**
+
+* **Training data:**
+  `gs://loan-default-artifacts-loan-default-mlops/data/loan_default_selected_features_clean.csv`
+* **Batch input (example):**
+  `gs://loan-default-artifacts-loan-default-mlops/data/batch_input.csv`
+* **Local samples (for quick runs/tests):**
+  `data/batch_input.csv`, `data/sample_input.json`
+
+**Schema expectations**
+
+* Features must match the columns used during training (see `data/sample_input.json` for request shape and `data/batch_input.csv` for column order).
+* If you add/remove features, **retrain** and **re-register** the model so the serving signature and batch pipeline stay consistent.
+
+**Repro tips**
+
+* Keep the cleaned training CSV immutable; write derived artifacts (predictions, reports) to separate prefixes:
+
+  * Predictions → `gs://loan-default-artifacts-loan-default-mlops/predictions/...`
+  * Monitoring reports → `gs://loan-default-artifacts-loan-default-mlops/reports/...`
+
 ---
 
 
@@ -85,233 +112,310 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph Data["📊 GCS Data"]
-        A[loan_default_selected_features_clean.csv]
-        B[batch_input.csv]
+        D1[loan_default_selected_features_clean.csv]
+        D2[batch_input.csv]
     end
 
-    subgraph Training["🧠 Training DAG"]
-        A --> T1[train_with_mlflow.py]
-        T1 --> MLflow[(MLflow Tracking & Registry)]
-        T1 --> Artifacts[(GCS Artifacts)]
+    subgraph Train["🧠 Airflow: train_pipeline_dag"]
+        D1 --> T[train_with_mlflow.py]
+        T --> ML[(MLflow Tracking)]
+        T --> ART[(Artifacts → GCS)]
+        ML --> REG[(MLflow Model Registry)]
+        REG -->|alias=staging| STG[Staging]
     end
 
-    subgraph Registry["📦 MLflow Registry"]
-        MLflow --> Staging[(Staging Alias)]
-        MLflow --> Production[(Production Alias)]
-        Promote[Promote Model DAG]:::dag
-        Staging --> Promote --> Production
+    subgraph Promote["🔄 Airflow: promote_model_dag"]
+      STG --> PRD[Production]
     end
 
-    subgraph Serving["🚀 Model Serving"]
-        Production --> API["MLflow REST API - Docker"]
+    subgraph Serve["🚀 MLflow REST (Docker)"]
+      PRD --> S[/ /invocations /]
     end
 
-    subgraph Batch["📈 Batch Prediction DAG"]
-        B --> P1[batch_predict.py]
-        P1 --> Predictions[(Predictions in GCS)]
-        Predictions --> Marker[latest_prediction.txt]
+    subgraph Batch["📈 Airflow: batch_prediction_dag"]
+        D2 --> BP[batch_predict.py]
+        BP --> PRED[(Predictions → GCS)]
     end
 
-    subgraph Monitoring["🛡️ Monitoring DAG"]
-        Marker --> M1[monitor_predictions.py + Evidently]
-        A --> M1
-        M1 --> Reports[(Reports in GCS)]
+    subgraph Monitor["🛡️ Airflow: monitoring_dag"]
+        PRED --> MON[monitor_predictions.py + Evidently]
+        D1 --> MON
+        MON --> RPT[(HTML/JSON Reports → GCS)]
+        MON -- drift? --> T
     end
 
     classDef dag fill:#f9f,stroke:#333,stroke-width:2px;
 ```
-**Key Design Choice: Model Serving**
-Instead of building a custom **FastAPI/Flask app**, this project uses **MLflow’s REST API** for serving:
+**Key design choice — MLflow Serving (no custom API):**
 
-* Standardized interface
-* Less boilerplate
-* CI/CD-friendly (integration tests hit `/invocations`)
-* Portable (local, Docker, or cloud)
+* Serve **by alias** (`staging` / `production`) from the **Model Registry**.
+* Zero app code to maintain; standard `/invocations` contract.
+* Works the same locally, in CI, or on Kubernetes.
+
+### Tooling (consistent & pinned)
+
+* **ML lifecycle**
+
+  * **MLflow 3.1.4** — tracking, registry, artifacts, serving
+  * **scikit-learn / XGBoost** — modeling
+  * *(Optional)* **Optuna** — add only if you use tuning (pin in requirements)
+
+* **Orchestration**
+
+  * **Apache Airflow 2.8.1 (Py3.10)** — four DAGs:
+
+    * `train_pipeline_dag`
+    * `promote_model_dag`
+    * `batch_prediction_dag`
+    * `monitoring_dag`
+
+* **Monitoring**
+
+  * **Evidently** — drift/quality reports (HTML/JSON) stored in GCS
+
+* **Infra / Packaging**
+
+  * **Docker** — containers for Airflow, MLflow, Serving, Terraform
+  * **Terraform** — GCP resources (bucket, SA, IAM)
+  * **GCS** — artifact store, predictions, reports
+
+* **DevEx / Quality**
+
+  * **Makefile** — one-liners (start/stop/lint/test/terraform)
+  * **pytest, flake8, black, isort, mypy**
+  * **GitHub Actions** — CI (lint + unit; optional integration)
+
+### Service boundaries
+
+| Component       | Responsibility                                     | Notes                       |
+| --------------- | -------------------------------------------------- | --------------------------- |
+| Airflow         | Schedule & run data/train/batch/monitor/promote    | Uses env + GCS SA key mount |
+| MLflow server   | Experiments, registry, artifact URIs               | Backed by GCS artifact root |
+| Serve container | Exposes `/invocations` using **MODEL\_NAME/ALIAS** | Health at `/ping`           |
+| Terraform       | Creates bucket + IAM                               | Run via Make targets        |
+| GCS             | Single source for artifacts/predictions/reports    | Keep bucket name consistent |
+
+**Aliases drive everything**: change `MODEL_ALIAS` → restart serving → traffic points at the new version, no code edits.
+
 ---
 
 
 ---
 ## 📦 Tech Stack
 
-This project integrates **Machine Learning**, **MLOps**, and **Cloud Infrastructure** tools to deliver a production-ready loan default prediction system.
+**Language**
 
-* **Programming Language**:
+* **Python 3.10**
 
-  * [Python 3.10+](https://www.python.org/) (core development)
+**ML & Tracking**
 
-* **Machine Learning & Experiment Tracking**:
+* **scikit-learn**, **XGBoost**
+* **MLflow 3.1.4** (single version across: tracking server, clients, and `requirements.serve.txt`)
 
-  * [scikit-learn](https://scikit-learn.org/) – model training & preprocessing
-  * [XGBoost](https://xgboost.readthedocs.io/) – gradient boosting models
-  * [Optuna](https://optuna.org/) – hyperparameter tuning
-  * [MLflow](https://mlflow.org/) – experiment tracking, model registry, and serving
+  * Experiments, Model Registry (aliases), and REST serving
+* *(Optional)* **Optuna** for HPO
 
-* **Orchestration & Workflow Management**:
+  * If used, ensure `optuna` is added to `requirements.txt` (pinned); otherwise omit
 
-  * [Apache Airflow](https://airflow.apache.org/) – DAGs for training, batch prediction, monitoring, and promotion
-  * Custom **bash scripts** (`start_all.sh`, `stop_all.sh`) for container orchestration
+**Orchestration**
 
-* **Model Monitoring & Drift Detection**:
+* **Apache Airflow 2.8.1 (Py3.10)**
 
-  * [Evidently AI](https://evidentlyai.com/) – monitoring, data drift, and target drift reports
+  * DAGs: `train_pipeline_dag`, `promote_model_dag`, `batch_prediction_dag`, `monitoring_dag`
+  * Google provider for GCS interactions
 
-* **Infrastructure & Deployment**:
+**Monitoring**
 
-  * [Docker](https://www.docker.com/) – containerization for all services
-  * [Terraform](https://www.terraform.io/) – Infrastructure as Code (IaC) on GCP
-  * [Google Cloud Storage (GCS)](https://cloud.google.com/storage) – storing artifacts, reports, and batch predictions
-  * [GitHub Actions](https://docs.github.com/en/actions) – CI/CD pipeline
+* **Evidently** for data/target drift and quality reports (HTML/JSON), stored in GCS
 
-* **Testing & Quality Assurance**:
+**Infrastructure & Packaging**
 
-  * [pytest](https://docs.pytest.org/) – unit and integration tests
-  * [flake8](https://flake8.pycqa.org/) – linting
-  * [black](https://black.readthedocs.io/) – code formatting
-  * [isort](https://pycqa.github.io/isort/) – import sorting
-  * [mypy](https://mypy.readthedocs.io/) – static type checking
----
+* **Docker** images: Airflow, MLflow, Serving, Terraform
+* **Terraform** for GCP (bucket, service account, IAM)
+* **Google Cloud Storage (GCS)** for artifacts, predictions, reports
 
+**DevEx & Quality**
+
+* **Makefile** (start/stop, lint, test, terraform)
+* **pytest**, **flake8**, **black**, **isort**, **mypy**
+* **GitHub Actions** CI (lint + unit; optional integration)
 
 ---
-## 📂 Repository Structure
+
+
+---
+## 📂 Repository Structure (updated)
 
 ```bash
 loan_default_prediction/
-├── .github/workflows/          # CI/CD workflows (GitHub Actions)
-│   ├── ci.yml                  # Linting + unit tests
-│   └── ci-integration.yml      # Full stack integration tests
+├── .github/
+│   └── workflows/
+│       ├── ci.yml
+│       └── ci-integration.yml
 │
-├── airflow/                    # Airflow orchestration stack
-│   ├── dags/                   # Training, prediction, monitoring, promotion DAGs
+├── airflow/                          # Orchestration stack
+│   ├── dags/
 │   │   ├── train_pipeline_dag.py
 │   │   ├── batch_prediction_dag.py
 │   │   ├── monitoring_dag.py
 │   │   └── promote_model_dag.py
-│   ├── artifacts/              # Local artifacts (predictions, reports)
-│   ├── mlruns/                 # Local MLflow tracking (if not using GCS)
-│   ├── logs/                   # Airflow runtime logs
-│   ├── keys/                   # GCP service account (mounted inside Airflow)
-│   ├── docker-compose.yaml     # Airflow + MLflow + Postgres stack
+│   ├── docker-compose.yaml           # Airflow + MLflow + Postgres + Serve + Terraform
 │   ├── start_all.sh / stop_all.sh
 │   ├── start_serve.sh / stop_serve.sh
-│   └── troubleshoot.sh         # Debugging helper
+│   └── troubleshoot.sh
+│   # (generated at runtime; keep gitignored)
+│   # airflow-logs/ , logs/ , mlruns/ , artifacts/ , keys/
 │
-├── src/                        # Core ML code
-│   ├── train_with_mlflow.py    # Train & log models with MLflow
-│   ├── tune_xgboost_with_optuna.py  # Hyperparameter tuning
-│   ├── batch_predict.py        # Batch inference
-│   ├── monitor_predictions.py  # Drift detection with Evidently
-│   ├── predict.py              # Test client for serving API
-│   ├── train.py                # Baseline training
-│   ├── train_and_compare.py    # Train + compare multiple models
-│   └── utils.py                # Shared helpers
+├── src/
+│   ├── train_with_mlflow.py
+│   ├── train.py
+│   ├── train_and_compare.py
+│   ├── tune_xgboost_with_optuna.py   # optional; include optuna in requirements if used
+│   ├── batch_predict.py
+│   ├── monitor_predictions.py
+│   ├── predict.py
+│   ├── utils.py
+│   └── config/                       # present in repo (project-specific configs)
 │
-├── infra/terraform/            # IaC for GCP resources
-│   ├── main.tf / variables.tf / outputs.tf
-│   └── terraform.tfvars        # Environment-specific config
+├── infra/
+│   └── terraform/
+│       ├── main.tf
+│       ├── variables.tf
+│       ├── outputs.tf
+│       └── terraform.tfvars.example  # template; real tfvars is gitignored
 │
-├── tests/                      # Unit & integration tests
+├── tests/
 │   ├── test_utils.py
 │   ├── test_prediction_integration.py
 │   └── test_batch_prediction_integration.py
 │
-├── data/                       # Example input data
+├── data/
 │   ├── batch_input.csv
 │   └── sample_input.json
 │
-├── notebooks/                  # EDA & experimentation notebooks
-├── artifacts/                  # Local artifacts (predictions, reports, plots)
-├── mlruns/                     # MLflow experiment runs (local)
-├── docker/                     # Docker-related configs (if any)
-├── keys/                       # GCP service account (outside Airflow too)
+├── notebooks/                        # optional
+├── docker/                           # present in repo (aux configs/scripts if any)
+├── artifacts/                        # generated; keep gitignored
+├── mlruns/                           # generated; keep gitignored
 │
-├── requirements.txt            # Core dependencies
-├── requirements-dev.txt        # Dev/test dependencies
-├── requirements-serve.txt      # MLflow serving dependencies
-├── requirements-monitoring.txt # Evidently monitoring dependencies
+├── entrypoint.sh                     # serving entrypoint (reads MODEL_NAME/MODEL_ALIAS)
+├── Dockerfile.airflow
+├── Dockerfile.serve
+├── Dockerfile.monitor
+├── Dockerfile.terraform
 │
-├── Dockerfile*                 # Docker images (training, Airflow, serving, monitoring, Terraform)
-├── Makefile                    # Automation (lint, test, Airflow, Terraform)
-├── pyproject.toml              # Formatter/type checker configs
-├── pytest.ini                  # Pytest configuration
-├── terraform.sh                # Helper for Terraform commands
+├── requirements.txt
+├── requirements-dev.txt
+├── requirements.serve.txt
+├── requirements-monitoring.txt
+│
+├── Makefile
+├── .env.example                      # template; real .env is gitignored
+├── .flake8
+├── pyproject.toml
+├── pytest.ini
 ├── LICENSE
 └── README.md
 ```
 
-### Key Directories
+**Generated/ignored paths (should not be committed):**
+`airflow/airflow-logs/`, `airflow/logs/`, `airflow/mlruns/`, `artifacts/`, `mlruns/`, `infra/terraform/.terraform/`, `infra/terraform/terraform.tfstate*`, `.pytest_cache/`, `keys/gcs-service-account.json`, `.env`
 
-* **`airflow/`** → DAGs and orchestration stack
-* **`src/`** → Core ML training, prediction, monitoring scripts
-* **`infra/terraform/`** → Cloud infrastructure as code
-* **`tests/`** → Unit & integration tests
-* **`data/`** → Sample input payloads
-* **`artifacts/`** → Predictions, monitoring reports, plots
----
-
+**Legacy/unneeded paths (safe to remove if present):**
+`Dockerfile.airflow_legacy_DO_NOT_USE.`, `airflow/gs:`, duplicate `.github/.github/`
 
 ---
+
+
+---
+
 ## ⚙️ Setup & Installation
 
-### Clone the Repository
+### 1) Prerequisites
+
+* **Docker** (24+)
+* **Docker Compose**
+* **Make**
+* **Python 3.10+** (only if you also want to run scripts locally)
+* A **GCP Service Account key (JSON)** with access to your GCS bucket (artifacts, predictions, reports)
+
+> ✅ This project uses real GCS (not a local emulator). Ensure your bucket exists and the SA has the right permissions.
+
+
+### 2) Clone the repository
 
 ```bash
 git clone https://github.com/JDede1/loan_default_prediction.git
 cd loan_default_prediction
 ```
 
-### Prerequisites
 
-Ensure the following are installed:
+### 3) Environment variables (safe template)
 
-* **Docker** (>= 24.0) & **Docker Compose**
-* **Python** 3.10+ (if running locally outside Docker)
-* **Make** (for convenience commands)
-* **GCP Service Account Key** (JSON) with access to GCS
-
-  * Save it under:
-
-    * `keys/gcs-service-account.json` (root)
-    * `airflow/keys/gcs-service-account.json` (for Airflow)
-
-
-### Environment Variables
-
-Copy the `.env` template and update with your values:
+Copy the template and fill in placeholders (keep your real `.env` **out of Git**):
 
 ```bash
 cp .env.example .env
 ```
 
-Key variables:
+Minimum keys to set in `.env`:
 
 ```bash
 # Airflow
 AIRFLOW_UID=50000
+AIRFLOW__CORE__FERNET_KEY=REPLACE_WITH_NEW_FERNET_KEY
+AIRFLOW__WEBSERVER__SECRET_KEY=REPLACE_WITH_NEW_SECRET_KEY
 
-# GCS bucket for ML artifacts
-GCS_BUCKET=loan-default-artifacts-mlops
-STORAGE_BACKEND=gcs
-
-# Path to service account key inside Airflow
+# GCP / GCS
+GOOGLE_CLOUD_PROJECT=YOUR_PROJECT_ID
+GCS_BUCKET=YOUR_BUCKET_NAME
 GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json
+
+# MLflow (model naming)
+MODEL_NAME=loan_default_model
+MODEL_ALIAS=staging
 ```
 
-### Install Dependencies (Local Dev)
-
-If you want to run code **outside Docker**:
+Generate fresh keys (recommended):
 
 ```bash
-# Core + Dev dependencies
-make install
+# Fernet key
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+# Webserver secret
+openssl rand -hex 32
 ```
 
-This installs:
+> Keep **bucket names and paths consistent** across `.env`, Terraform, and any hard-coded examples.
 
-* `requirements.txt` (core ML packages)
-* `requirements-dev.txt` (linting, testing, type checking)
 
-### Start Airflow + MLflow + GCS (via Docker)
+### 4) Place your GCP key (single location)
+
+Put the SA key at:
+
+```
+keys/gcs-service-account.json   # (gitignored)
+```
+
+Docker Compose will mount it into containers at:
+
+```
+/opt/airflow/keys/gcs-service-account.json
+```
+
+> You do **not** need to duplicate it under `airflow/keys/`; the compose file handles the mount.
+
+
+### 5) (Optional) Local Python dependencies
+
+If you want to run scripts locally (outside Docker):
+
+```bash
+make install   # installs requirements.txt + requirements-dev.txt
+```
+
+
+### 6) Start core services (Airflow + MLflow + Postgres)
 
 From the repo root:
 
@@ -319,150 +423,97 @@ From the repo root:
 make start
 ```
 
-This spins up:
+* Airflow UI: [http://localhost:8080](http://localhost:8080)
+* MLflow UI:  [http://localhost:5000](http://localhost:5000)
 
-* **Airflow Webserver** ([http://localhost:8080](http://localhost:8080))
-* **MLflow Tracking Server** ([http://localhost:5000](http://localhost:5000))
-* **MLflow Model Serving** ([http://localhost:5001](http://localhost:5001))
-* **Postgres** (Airflow backend)
-
-To stop services:
-
-```bash
-make stop
-```
-
-### Helper Scripts
-
-The `airflow/` folder includes lower-level scripts (wrapped by the `make` commands above):
-
-* `start_all.sh` / `stop_all.sh` → Manage Airflow + MLflow stack
-* `start_serve.sh` / `stop_serve.sh` → Manage serving container
-* `troubleshoot.sh` → Debug services
-
-Use `make` whenever possible. Direct script calls are mostly for debugging.
-
-### Helper Commands (recommended)
-
-Most workflows can be run via `make` targets:
-
-| Command             | Description                                                                                                 |
-| ------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `make start`        | Start **Airflow + MLflow** stack                                                                            |
-| `make start-serve`  | Start **MLflow model serving API** ([http://localhost:5001/invocations](http://localhost:5001/invocations)) |
-| `make stop-serve`   | Stop only the serving container                                                                             |
-| `make stop`         | Stop all services (Airflow, MLflow, serving, Postgres)                                                      |
-| `make troubleshoot` | Run diagnostic checks (logs, permissions, health)                                                           |
+> This **does not** start model serving. Serving is a separate container (next step).
 
 
-### Run Linting & Tests
-
-```bash
-make lint      # flake8
-make format    # black + isort
-make test      # unit tests
-make integration-tests  # inside containers
-```
-
-### Terraform (GCP Infrastructure)
-
-All infra is defined in `infra/terraform/`.
-To deploy (from repo root):
-
-```bash
-make terraform-init
-make terraform-plan
-make terraform-apply
-make terraform-destroy
-```
-```bash
-# terraform.tfvars
-project_id   = "your-gcp-project-id"
-region       = "us-central1"
-bucket_name  = "loan-default-artifacts-mlops"
-```
----
-
-
----
-## 🚀 Usage
-
-This section shows how to run **training**, **serving**, **batch inference**, and **monitoring** — either via **Airflow** (recommended) or **manually** for quick local checks.
-
-### Start the stack
-
-From repo root:
-
-```bash
-make start
-```
-
-* Airflow UI → [http://localhost:8080](http://localhost:8080)
-* MLflow UI → [http://localhost:5000](http://localhost:5000)
-* Serving API → [http://localhost:5001/invocations](http://localhost:5001/invocations)
-
-Stop everything:
-
-```bash
-make stop
-```
-
-### Run pipelines via Airflow (recommended)
-
-Open Airflow UI → **[http://localhost:8080](http://localhost:8080)**
-
-DAGs to run (in order):
-
-1. **train\_model\_with\_mlflow**
-
-   * Trains a model on GCS/local data
-   * Logs metrics/artifacts to MLflow
-   * Registers/updates `loan_default_model@staging`
-
-2. **promote\_model\_dag** (optional)
-
-   * Promotes `staging` → `production` if thresholds are met
-
-3. **batch\_prediction\_dag**
-
-   * Runs batch inference using the selected alias (staging/production)
-   * Saves `predictions_*.csv` to GCS and updates the “latest” marker
-
-4. **monitoring\_dag**
-
-   * Compares training data vs latest predictions with **Evidently**
-   * Saves JSON/HTML reports to artifacts (and GCS if enabled)
-
-> Tip: You can trigger DAG runs manually in the UI or let the cron schedules handle it.
-
-### Train locally (manual)
-
-If you want a quick local training run (outside Airflow), you can invoke the training script:
-
-```bash
-python src/train_with_mlflow.py \
-  --train_path data/loan_default_selected_features_clean.csv \
-  --experiment_name loan_default_experiment \
-  --register_name loan_default_model \
-  --register_alias staging
-```
-
-Results:
-
-* Run appears in **MLflow UI**
-* Registered model/alias updated (if `--register_name` provided)
-
-### Serving API (real-time inference)
-
-The **serve** container hosts an MLflow model server bound to the **Model Registry alias**.
-
-Start serving:
+### 7) Start model serving (separate container)
 
 ```bash
 make start-serve
+# health check
+curl -sS http://localhost:5001/ping
 ```
 
-#### Quick curl test
+* Serving API: [http://localhost:5001/invocations](http://localhost:5001/invocations)
+* The serving container resolves the model via **MLflow Model Registry** using:
+
+  * `MODEL_NAME` (e.g., `loan_default_model`)
+  * `MODEL_ALIAS` (e.g., `staging` or `production`)
+
+To switch to Production later, update your alias (in `.env` or compose) and restart serving:
+
+```bash
+# MODEL_ALIAS=production
+make stop-serve && make start-serve
+```
+
+
+### 8) Stop services
+
+```bash
+make stop-serve   # stops only the serving container
+make stop         # stops Airflow, MLflow, Postgres, etc.
+```
+
+
+### 9) Troubleshooting
+
+```bash
+make troubleshoot
+# or view logs
+docker compose -f airflow/docker-compose.yaml logs -f webserver scheduler mlflow
+```
+
+
+### 10) Services quick reference
+
+| Service       | URL                                            | How to start       |
+| ------------- | ---------------------------------------------- | ------------------ |
+| Airflow       | [http://localhost:8080](http://localhost:8080) | `make start`       |
+| MLflow UI     | [http://localhost:5000](http://localhost:5000) | `make start`       |
+| Model Serving | [http://localhost:5001](http://localhost:5001) | `make start-serve` |
+
+---
+
+
+---
+
+## ⚡ Quickstart (Train → Serve → Predict)
+
+### 1) Start core services
+
+```bash
+make start
+# Airflow UI → http://localhost:8080
+# MLflow UI  → http://localhost:5000
+```
+
+### 2) Train & register the model (Airflow)
+
+In the Airflow UI, trigger this DAG in order:
+
+1. **`train_pipeline_dag`**
+
+   * Logs runs to MLflow
+   * Registers/updates **`loan_default_model@staging`**
+
+> Tip: In MLflow UI → “Models” you should see `loan_default_model` with alias **staging**.
+
+### 3) Start model serving (alias-driven)
+
+```bash
+make start-serve
+curl -sS http://localhost:5001/ping   # expect HTTP 200
+```
+
+* Serving API: `POST http://localhost:5001/invocations`
+
+### 4) Send a sample prediction
+
+Using the provided JSON:
 
 ```bash
 curl -X POST http://localhost:5001/invocations \
@@ -470,181 +521,249 @@ curl -X POST http://localhost:5001/invocations \
   -d @data/sample_input.json
 ```
 
-Expected:
-
-```json
-{"predictions": [0, 1, ...]}
-```
-
-#### Python test
+Or Python client:
 
 ```bash
 python src/predict.py
 ```
 
-> If you update the `staging` alias in MLflow, the **same container** will serve the new version automatically.
+### 5) (Optional) Promote to Production
 
-Stop serving:
-```bash
-make stop-serve
-```
+In Airflow UI, run **`promote_model_dag`** to set alias:
 
-### Batch prediction (manual)
+* `staging` → `production`
 
-Generate predictions for a CSV of rows and save to a timestamped file (and GCS if configured):
+Then restart serving to pick up the alias change:
 
 ```bash
-python src/batch_predict.py \
-  --model_name loan_default_model \
-  --alias staging \
-  --input_path data/batch_input.csv \
-  --output_path artifacts/predictions.csv
+# Ensure MODEL_ALIAS=production (in .env or docker-compose)
+make stop-serve && make start-serve
 ```
 
-Output:
+### 6) Batch predict & monitor (Airflow)
 
-* Local file like `artifacts/predictions_YYYY-MM-DD_HH-MM-SS.csv`
-* Uploaded to `gs://<bucket>/predictions/...` if `STORAGE_BACKEND=gcs`
+* **`batch_prediction_dag`** → scores `data/batch_input.csv`, writes predictions to artifacts/GCS.
+* **`monitoring_dag`** → generates Evidently drift reports; alerts/triggered actions per thresholds.
 
-### Monitoring (manual)
-
-Compare **training** vs **latest predictions** with Evidently:
+### 7) Stop services
 
 ```bash
-python src/monitor_predictions.py \
-  --train_data_path data/loan_default_selected_features_clean.csv \
-  --prediction_path artifacts/predictions_YYYY-MM-DD_HH-MM-SS.csv
+make stop-serve   # serving only
+make stop         # Airflow, MLflow, Postgres, etc.
 ```
+---
 
-Outputs:
 
-* `artifacts/monitoring_report_*.json`
-* `artifacts/monitoring_report_*.html` (human-readable)
+---
+## 🚀 Usage
 
-If `STORAGE_BACKEND=gcs` and `GCS_BUCKET` are set, reports are also uploaded to GCS.
+### Overview
 
-### Tests
+Use **Airflow DAGs** for production-like runs. Use **manual commands** only for quick local checks. Serving is a **separate container** from the core stack.
 
-#### Unit tests (fast)
 
-```bash
-make test
-```
+### A) Run pipelines via Airflow (recommended)
 
-#### Integration tests (inside Airflow container)
+Open the Airflow UI → **[http://localhost:8080](http://localhost:8080)** and trigger in this order:
 
-These hit real containers (MLflow server, model registry):
+1. **`train_pipeline_dag`**
+   Trains the model, logs runs to MLflow, and updates **`loan_default_model@staging`** in the Model Registry.
 
-```bash
-make integration-tests
-```
+2. **`promote_model_dag`** (optional)
+   Applies your promotion policy and flips alias **staging → production** when thresholds pass.
 
-* Ensures the **serving API** responds
-* Runs **batch prediction** end-to-end
+3. **`batch_prediction_dag`**
+   Scores `data/batch_input.csv`, writes outputs to `artifacts/` and (if configured) to **`gs://${GCS_BUCKET}/predictions/…`**.
 
-> CI (GitHub Actions) runs **lint + unit tests** on every push/PR to `main`.
+4. **`monitoring_dag`**
+   Generates **Evidently** drift/quality reports comparing training vs latest predictions; saves to `artifacts/` and optionally **`gs://${GCS_BUCKET}/reports/…`**. Can alert and/or trigger retraining based on thresholds.
 
-### Common flows
+> Tip: In MLflow UI (**[http://localhost:5000](http://localhost:5000)**) → “Models” → `loan_default_model`, you’ll see aliases (**staging**, **production**) and versions.
 
-**Full local run (with Docker):**
 
-```bash
-make start
-# In Airflow UI: trigger train_model_with_mlflow
-# optional: trigger promote_model_dag
-# then: trigger batch_prediction_dag
-# then: trigger monitoring_dag
-```
+### B) Serving (real-time inference)
 
-**One-off quick check:**
+* Start serving separately (see **Setup & Installation → Start model serving**).
+* The server resolves the model via MLflow Registry using **`MODEL_NAME`** and **`MODEL_ALIAS`** (no code edits needed).
 
-```bash
-python src/train_with_mlflow.py --register_name loan_default_model --register_alias staging
-python src/batch_predict.py --model_name loan_default_model --alias staging --input_path data/batch_input.csv --output_path artifacts/preds.csv
-python src/monitor_predictions.py --train_data_path data/loan_default_selected_features_clean.csv --prediction_path artifacts/preds_*.csv
-```
+Health check:
+
+* `GET http://localhost:5001/ping` → **200 OK** when ready
+
+Predict endpoint:
+
+* `POST http://localhost:5001/invocations`
+  Body format: MLflow pyfunc `"columns"/"data"` JSON (see `data/sample_input.json`).
+
+Switching aliases:
+
+* Update `MODEL_ALIAS` to `production` (in `.env` or compose), then restart serving.
+
+
+### C) Manual one-offs (optional)
+
+* **Train locally** (outside Airflow) to debug: run your training script (appears in MLflow and can update the registry).
+* **Batch predict locally**: run the batch script against a CSV, write to `artifacts/` and optionally to GCS if env is set.
+* **Monitoring locally**: run the monitoring script to produce Evidently HTML/JSON reports.
+
+> For exact commands, see **Quickstart**. Prefer Airflow DAGs for the real pipeline.
+
 ---
 
 
 ---
 ## 🔄 CI/CD
 
-* **ci.yml** → unit tests + lint on every push/PR.
-* **ci-integration.yml** → spins up full stack (Airflow + MLflow + serving) and runs integration tests.
+**Workflows (GitHub Actions)**
+
+* **`.github/workflows/ci.yml`** — fast checks on every push/PR to `main`:
+
+  * Install deps (Python **3.10**)
+  * **Lint/format checks:** `flake8`, `black --check`, `isort --check-only`
+  * **Unit tests:** `pytest -q` (excludes `-m integration`)
+  * (Optional) **type checks:** `mypy` if enabled in `ci.yml`
+* **`.github/workflows/ci-integration.yml`** — end-to-end integration on demand or on PR label:
+
+  * Bring up **Airflow + MLflow + Postgres + Serve** via `airflow/docker-compose.yaml`
+  * Wait for health (webserver `/health`, serve `/ping`)
+  * **Integration tests:** `pytest -m integration -v`
+  * Tear down stack
+
+**What the pipelines enforce**
+
+* **Consistency:** single Python (3.10), unified **MLflow 3.1.4** across server/clients.
+* **Quality gates:** style, lint, unit tests must pass before merge.
+* **Safety:** integration tests hit real services (Model Registry + `/invocations`) to catch drift/misconfig.
+
+**Tips for reliability**
+
+* Pin versions in `requirements*.txt` (already done).
+* Cache pip in CI to speed up runs.
+* Fail fast if health checks don’t pass within a timeout.
+* Keep integration jobs non-blocking on every push (e.g., run on PR label `integration` or nightly) to keep PR feedback fast.
+
+**Local equivalents**
+
+* Fast loop: `make lint && make test`
+* Full stack (local): `make start && make start-serve && make integration-tests` then `make stop-serve && make stop`
 
 ```mermaid
 flowchart TD
-    A[Push/Pull Request to main] --> B[Linting & Formatting]
-    B --> C[Testing]
-    C --> D[CI Results Reported]
-    D --> E[Badges Updated]
-    D --> F[Future: Docker Builds + GCP Deployment]
+    A[Push / PR to main] --> B[CI: Lint & Format checks]
+    B --> C[CI: Unit tests]
+    C --> D[CI status reported]
+    D --> E[CI badge reflects latest status]
+
+
+    A --> F{Integration trigger? <br/>(manual / label / schedule)}
+    F -->|yes| G[Spin up stack via docker-compose]
+    G --> H[Health checks: Airflow & Serve]
+    H --> I[Integration tests]
+    I --> J[Teardown]
+    J --> K[Integration status reported]
 ```
+*note:* The integration workflow is **experimental**. It runs locally via `make integration-tests`, and the GitHub Actions job is being debugged; no README badge until it’s stable.
+
 ---
 
 
 ---
 ## ☁️ Infrastructure (Terraform)
 
-This project uses **Terraform** to provision and manage Google Cloud resources required for MLflow, Airflow, and batch prediction pipelines.
+Provision the minimal GCP resources for artifacts, predictions, and reports — all via **IaC**.
 
-### Infrastructure Components
+### What Terraform creates
 
-* **Google Cloud Storage (GCS)**
+* **GCS bucket**: single canonical store for MLflow artifacts, batch predictions, and monitoring reports
+  `gs://loan-default-artifacts-loan-default-mlops/`
+* **Service Account (SA)** + **IAM**: credentials used by Airflow/MLflow/serving to access the bucket
+* *(Optional)* API enablement and standard labels
 
-  * Stores MLflow artifacts (models, metrics, feature importance, plots, etc.)
-  * Stores batch prediction outputs and monitoring reports
+> State is kept **locally** (gitignored). For teams, consider a **remote state** backend (e.g., GCS).
 
-* **Service Account + IAM Roles**
 
-  * Provides secure authentication for Airflow and MLflow to access GCS
+### Files
 
-* **State Management**
-
-  * Terraform keeps track of resource configurations via `terraform.tfstate`
-  * Ensures reproducible and version-controlled infrastructure
-
-### Terraform Directory
-
-```bash
+```
 infra/terraform/
-├── main.tf              # Main configuration for GCP services
-├── variables.tf         # Input variables (e.g., project_id, region, bucket_name)
-├── outputs.tf           # Exported outputs (e.g., bucket URL)
-├── terraform.tfvars     # Custom values for variables (gitignored)
-├── terraform.tfstate    # State file (gitignored)
-└── .terraform/          # Local Terraform cache (gitignored)
+├── main.tf
+├── variables.tf
+├── outputs.tf
+└── terraform.tfvars.example   # copy → terraform.tfvars (gitignored)
 ```
 
-### Terraform Commands
+**Do not commit**: `terraform.tfvars`, `.terraform/`, `terraform.tfstate*`.
 
-All Terraform commands are wrapped in the `Makefile` for simplicity.
+
+### Configure variables
+
+1. Copy the example and edit:
 
 ```bash
-# Initialize Terraform
+cp infra/terraform/terraform.tfvars.example infra/terraform/terraform.tfvars
+```
+
+2. Set values (example):
+
+```hcl
+# infra/terraform/terraform.tfvars
+project_id  = "your-gcp-project-id"
+region      = "us-central1"
+bucket_name = "loan-default-artifacts-loan-default-mlops"
+```
+
+Keep this bucket name consistent everywhere (compose, `.env`, README).
+
+
+### Run Terraform (via Make)
+
+From repo root:
+
+```bash
 make terraform-init
-
-# Show planned changes
 make terraform-plan
-
-# Apply changes (provision resources)
 make terraform-apply
-
-# Destroy resources
+# later
 make terraform-destroy
 ```
 
+These targets run Terraform **inside the dockerized `terraform` service**, with your SA key auto-mounted at:
+
+```
+/opt/airflow/keys/gcs-service-account.json
+```
+
+
 ### Authentication
 
-Terraform authenticates with GCP using the **service account key**:
+Use a **Service Account key (JSON)** placed at:
 
-* Stored at: `keys/gcs-service-account.json`
-* Mounted into Airflow and MLflow containers
-* Exported as environment variable:
-
-```bash
-export GOOGLE_APPLICATION_CREDENTIALS=keys/gcs-service-account.json
 ```
+keys/gcs-service-account.json   # gitignored
+```
+
+Docker Compose injects `GOOGLE_APPLICATION_CREDENTIALS` for the Terraform container.
+
+
+### Minimal IAM for the runtime SA
+
+If you create a dedicated SA used by Airflow/MLflow/Serving, grant **least privilege** on the bucket:
+
+* `roles/storage.objectAdmin` on the bucket (read/write objects)
+* *(Optional)* `roles/storage.legacyBucketReader` for listing, if needed by tools
+
+For quick starts, some projects use `roles/storage.admin` (broader than necessary).
+
+---
+
+### After apply
+
+* Update `.env` / compose to match the bucket:
+
+  * `MLFLOW_ARTIFACT_URI=gs://loan-default-artifacts-loan-default-mlops/mlflow`
+  * Training data, batch input/output, and report paths under the same bucket prefix
+* Verify access by uploading a small file or by running the pipeline once (training → artifact write).
+
 
 ### Visual Overview
 
@@ -652,12 +771,13 @@ export GOOGLE_APPLICATION_CREDENTIALS=keys/gcs-service-account.json
 flowchart TD
     subgraph GCP["☁️ Google Cloud Platform"]
         SA["🔑 Service Account (IAM)"]
-        GCS["🗄️ GCS Bucket (loan-default-artifacts)"]
+        GCS["🗄️ GCS Bucket (loan-default-artifacts-loan-default-mlops)"]
     end
 
-    Dev["💻 Developer (Terraform CLI)"] -->|terraform apply| GCP
-    Airflow["🌀 Airflow DAGs"] -->|read/write| GCS
-    MLflow["📦 MLflow Tracking/Registry"] -->|store artifacts| GCS
+    TF["🧰 Terraform (dockerized via make)"] -->|terraform apply| GCP
+    Airflow["🌀 Airflow DAGs"] -->|read/write predictions & reports| GCS
+    MLflow["📦 MLflow Tracking/Registry"] -->|store model artifacts| GCS
+    Serve["🚀 MLflow Serving"] -->|loads model from Registry (artifacts in GCS)| GCS
 ```
 ---
 
@@ -747,54 +867,68 @@ RUN_INTEGRATION_TESTS=1 pytest -m integration -v
 
 
 ---
-## 📈 Future Improvements
 
-A forward-looking roadmap to strengthen robustness, scale, and MLOps maturity.
+## 🔐 Secrets & Safety
 
-### Modeling & Data
+**Never commit secrets.** Use templates and mounts; keep real values local.
 
-* **Feature store** (Feast) for consistent online/offline features.
-* **Hyperparameter search at scale** (Optuna on Ray/Vertex Vizier); early stopping & pruning.
-* **Model ensembling** or **stacking** (XGBoost + LightGBM + calibrated LR).
-* **Bias & fairness checks** (responsible AI reports; subgroup performance).
-* **Online inference features** (recent credit events, rolling aggregates via streaming).
-* **Automated data quality gates** (Great Expectations checks in DAG pre-steps).
+### What to keep out of Git
 
-### Automation & Orchestration
+* Real `.env` (commit **`.env.example`** only)
+* `keys/gcs-service-account.json` (gitignored)
+* Terraform state & tfvars (`infra/terraform/.terraform/`, `terraform.tfstate*`, `terraform.tfvars`)
+* Runtime artifacts/logs (`airflow/logs/`, `airflow/mlruns/`, `artifacts/`, root `mlruns/`)
 
-* **Promotion policy as code**: formalize thresholds/guards in a single YAML consumed by both Airflow and CI.
-* **Blue/green or canary serving**: route % traffic to the candidate model; rollback on SLO breach.
-* **Backfills** and **reprocessing DAGs** with idempotent runs & data versioning (Delta/BigQuery time travel).
+### Safe templates
 
-### Monitoring & Observability
+* **`.env.example`** — placeholders for all required env vars (Airflow keys, project/bucket, MLflow URIs, SMTP/Slack if used)
+* **`infra/terraform/terraform.tfvars.example`** — placeholders for `project_id`, `region`, `bucket_name`
 
-* Expand **Evidently** coverage: target + data drift, stability, PSI, population shifts.
-* **Latency & availability SLOs** for serving; alerts in Slack/Email with run links.
-* Centralized logs/metrics/traces (OpenTelemetry → Grafana/Prometheus/Loki).
+### Rotation (if something leaks)
 
-### Infrastructure & Scale
+* **Airflow**: generate new `AIRFLOW__CORE__FERNET_KEY` and `AIRFLOW__WEBSERVER__SECRET_KEY`
+* **Slack**: create a new webhook; delete the old
+* **Gmail App Password (SMTP)**: revoke and create a new one
+* **GCP Service Account**: create a new key, delete the old key ID
+* Update compose/`.env`, rebuild, and redeploy
 
-* **Artifact store hardening**: signed URLs, retention tiers, inventory reports.
-* **Autoscaling** for serving (KEDA/HPA) and **GPU-ready** build variants (if needed).
-* **Distributed training** (Ray, Dask, or Spark) when dataset volume grows.
+### Principle of least privilege
 
-### Security & Compliance
+* Bucket-level IAM for the runtime SA: start with `roles/storage.objectAdmin` on the bucket
+* Restrict key download and rotate keys periodically
+* For production, prefer **GCP Secret Manager** over JSON key files
 
-* Secrets via **GCP Secret Manager**; remove JSON keys from mounts.
-* **Least-privilege service accounts**; per-environment isolation (dev/stage/prod).
-* Audit trails on **model registry** changes (who/what/when) surfaced in PRs.
+### Scanning & pre-commit
 
-### Cost & Efficiency
+Add secret scanning to prevent accidental commits:
 
-* Storage lifecycle policies (archive → delete).
-* Spot/preemptible training nodes; cache datasets & artifacts.
-* CI caching (pip/pytest) and conditional workflows to avoid redundant runs.
+* **Pre-commit**: `gitleaks` (or `trufflehog`) hook
+* CI step to run the scanner on PRs
 
-### Governance & Reproducibility
+Example `.pre-commit-config.yaml`:
 
-* **Model cards** and **data cards** published per release.
-* Data & model **lineage** (OpenLineage + Marquez, or built-in with Airflow).
-* **Semantic versioning** for models (e.g., `v{major.minor.patch}`) synced to registry aliases.
+```yaml
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.6.0
+  hooks:
+    - id: check-added-large-files
+    - id: end-of-file-fixer
+    - id: trailing-whitespace
+
+- repo: https://github.com/gitleaks/gitleaks
+  rev: v8.18.4
+  hooks:
+    - id: gitleaks
+```
+
+Enable:
+
+```bash
+pip install pre-commit
+pre-commit install
+pre-commit run --all-files
+```
 ---
 
 

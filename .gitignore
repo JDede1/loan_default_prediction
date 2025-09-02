@@ -9,7 +9,6 @@ __pycache__/
 *.egg-info/
 .eggs/
 .Python
-.env
 
 # ==========================
 # Virtual Environments
@@ -22,9 +21,19 @@ ENV/
 .mlenv*/
 
 # ==========================
+# Secrets (templates only in git)
+# ==========================
+.env
+*.env
+keys/
+airflow/keys/
+JSON Key/                # rare local folder name some users create
+
+# ==========================
 # Airflow Runtime Data
 # ==========================
 airflow/logs/
+airflow/airflow-logs/
 airflow/*.pid
 airflow/airflow-webserver.pid
 airflow/airflow-scheduler.pid
@@ -32,21 +41,37 @@ airflow/dag_processor_manager/
 airflow/scheduler/
 airflow/mlruns/
 airflow/artifacts/
-airflow/gs:/        # prevent accidental gs:// folder copies
-
+airflow/tmp/
+# Prevent accidental "gs://" mirror copies under airflow/
+airflow/gs:/
 # Hidden airflow temp dirs
 .airflow/
 
-# Runtime logs and pids (root-level Airflow dir)
+# Root-level runtime/logs
 logs/
 airflow-logs/
 *.pid
 
 # ==========================
-# MLflow Local Tracking Data
+# MLflow Local Tracking & Artifacts
 # ==========================
 mlruns/
 artifacts/
+
+# ==========================
+# Data files
+# Keep only tiny samples for demo/tests
+# ==========================
+data/*
+!data/sample_input.json
+!data/batch_input.csv
+
+# ==========================
+# Model Artifacts
+# Keep model registry in MLflow, not repo
+# ==========================
+model/*
+!model/README.md
 
 # ==========================
 # GCS Local Mirror
@@ -54,47 +79,11 @@ artifacts/
 gs/
 
 # ==========================
-# Data Files
-# Keep only tiny sample input for demo
+# Terraform (scoped + generic)
 # ==========================
-data/*
-!data/sample_input.json
-
-# ==========================
-# Model Artifacts
-# Keep model registry in MLflow, not repo
-# ==========================
-model/*
-!model/README.md  # Optional placeholder file
-
-# ==========================
-# Keys & Credentials
-# ==========================
-keys/
-JSON Key/
-*.json
-!data/sample_input.json  # re-allow sample file
-airflow/keys/
-infra/terraform/*.json
-
-# ==========================
-# Archive
-# ==========================
-archive/
-
-# ==========================
-# OS / Editor / Misc
-# ==========================
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# ==========================
-# Terraform
-# ==========================
+infra/terraform/.terraform/
+infra/terraform/terraform.tfstate*
+infra/terraform/terraform.tfvars
 .terraform/
 *.tfstate
 *.tfstate.backup
@@ -104,12 +93,15 @@ Thumbs.db
 # ==========================
 .compose_hash
 .monitor_hash
+airflow/.compose_hash
+airflow/.monitor_hash
 
 # ==========================
 # Testing & Coverage
 # ==========================
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 
 # ==========================

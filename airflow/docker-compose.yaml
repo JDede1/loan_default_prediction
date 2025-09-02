@@ -195,14 +195,18 @@ services:
     environment:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
+      MODEL_NAME: loan_default_model
+      MODEL_ALIAS: staging   # change to production when promoting
+      PORT: 5001
     volumes:
-      - mlflow-runs:/opt/airflow/mlruns
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
-    command: >
-      mlflow models serve -m "models:/loan_default_model@staging"
-      --host 0.0.0.0 --port 5001 --no-conda
     depends_on:
       - mlflow
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5001/ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
     networks:
       - airflow
       

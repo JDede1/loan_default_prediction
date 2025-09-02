@@ -18,7 +18,7 @@ types-requests
 requests>=2.32.0
 
 # MLflow for testing model loading & batch predictions
-mlflow>=2.14.0
+mlflow==3.1.4
 
 # Any extras for dev notebooks/debugging
 ipython
