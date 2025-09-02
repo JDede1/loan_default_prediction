@@ -647,18 +647,17 @@ Switching aliases:
 
 ```mermaid
 flowchart TD
-    A[Push / PR to main] --> B[CI: Lint & Format checks]
-    B --> C[CI: Unit tests]
-    C --> D[CI status reported]
-    D --> E[CI badge reflects latest status]
+  A[Push or PR to main] --> B[CI: Lint and Format]
+  B --> C[CI: Unit tests]
+  C --> D[CI status reported]
+  D --> E[CI badge reflects latest status]
 
-
-    A --> F{Integration trigger? (manual / label / schedule)}
-    F -->|yes| G[Spin up stack via docker-compose]
-    G --> H[Health checks: Airflow & Serve]
-    H --> I[Integration tests]
-    I --> J[Teardown]
-    J --> K[Integration status reported]
+  A --> F[Integration trigger (manual or schedule)]
+  F --> G[Compose up stack]
+  G --> H[Health checks: Airflow and Serve]
+  H --> I[Integration tests]
+  I --> J[Teardown]
+  J --> K[Integration status reported]
 ```
 *note:* The integration workflow is **experimental**. It runs locally via `make integration-tests`, and the GitHub Actions job is being debugged; no README badge until it’s stable.
 
