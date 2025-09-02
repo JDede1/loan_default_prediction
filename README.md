@@ -652,7 +652,7 @@ flowchart TD
   C --> D[CI status reported]
   D --> E[CI badge reflects latest status]
 
-  A --> F[Integration trigger (manual or schedule)]
+  A --> F[Integration trigger - manual or schedule]
   F --> G[Compose up stack]
   G --> H[Health checks: Airflow and Serve]
   H --> I[Integration tests]
