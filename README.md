@@ -246,6 +246,9 @@ flowchart LR
 
 ```bash
 loan_default_prediction/
+├── .devcontainer/                    # Codespaces/devcontainer setup
+│   └── devcontainer.json             # installs gcloud + Terraform + deps
+│
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml
@@ -260,43 +263,49 @@ loan_default_prediction/
 │   ├── docker-compose.yaml           # Airflow + MLflow + Postgres + Serve + Terraform
 │   ├── start_all.sh / stop_all.sh
 │   ├── start_serve.sh / stop_serve.sh
-│   └── troubleshoot.sh
-│   # (generated at runtime; keep gitignored)
-│   # airflow-logs/ , logs/ , mlruns/ , artifacts/ , keys/
+│   ├── troubleshoot.sh
+│   ├── airflow.cfg
+│   ├── webserver_config.py
+│   ├── create_airflow_user.sh
+│   ├── tests/                        # integration tests run inside containers
+│   └── tmp/                          # temp dir (runtime, gitignored)
+│   # (runtime dirs: airflow-logs/, logs/, mlruns/, artifacts/, keys/)
 │
-├── src/
+├── src/                              # Core ML code
 │   ├── train_with_mlflow.py
 │   ├── train.py
 │   ├── train_and_compare.py
-│   ├── tune_xgboost_with_optuna.py   # optional; include optuna in requirements if used
+│   ├── tune_xgboost_with_optuna.py
 │   ├── batch_predict.py
 │   ├── monitor_predictions.py
 │   ├── predict.py
 │   ├── utils.py
-│   └── config/                       # present in repo (project-specific configs)
+│   └── config/                       # project-specific configs
 │
 ├── infra/
 │   └── terraform/
 │       ├── main.tf
 │       ├── variables.tf
 │       ├── outputs.tf
-│       └── terraform.tfvars.example  # template; real tfvars is gitignored
+│       ├── terraform.tfstate*        # gitignored
+│       ├── .terraform/               # gitignored
+│       └── terraform.tfvars          # gitignored (real values)
 │
-├── tests/
+├── tests/                            # host-side unit/integration tests
 │   ├── test_utils.py
 │   ├── test_prediction_integration.py
 │   └── test_batch_prediction_integration.py
 │
-├── data/
+├── data/                             # local sample data
 │   ├── batch_input.csv
 │   └── sample_input.json
 │
-├── notebooks/                        # optional
-├── docker/                           # present in repo (aux configs/scripts if any)
-├── artifacts/                        # generated; keep gitignored
-├── mlruns/                           # generated; keep gitignored
+├── notebooks/                        # exploratory notebooks
+├── docker/                           # auxiliary docker configs (if any)
+├── artifacts/                        # generated; gitignored
+├── mlruns/                           # generated; gitignored
 │
-├── entrypoint.sh                     # serving entrypoint (reads MODEL_NAME/MODEL_ALIAS)
+├── entrypoint.sh                     # serving entrypoint (MODEL_NAME/MODEL_ALIAS)
 ├── Dockerfile.airflow
 ├── Dockerfile.serve
 ├── Dockerfile.monitor
@@ -316,17 +325,13 @@ loan_default_prediction/
 └── README.md
 ```
 
-**Generated/ignored paths (should not be committed):**
-`airflow/airflow-logs/`, `airflow/logs/`, `airflow/mlruns/`, `artifacts/`, `mlruns/`, `infra/terraform/.terraform/`, `infra/terraform/terraform.tfstate*`, `.pytest_cache/`, `keys/gcs-service-account.json`, `.env`
-
-**Legacy/unneeded paths (safe to remove if present):**
-`Dockerfile.airflow_legacy_DO_NOT_USE.`, `airflow/gs:`, duplicate `.github/.github/`
+**Generated/ignored paths (not to commit):**
+`airflow/airflow-logs/`, `airflow/logs/`, `airflow/mlruns/`, `airflow/artifacts/`, `artifacts/`, `mlruns/`, `.pytest_cache/`, `infra/terraform/.terraform/`, `infra/terraform/terraform.tfstate*`, `keys/gcs-service-account.json`, `.env`
 
 ---
 
 
 ---
-
 ## ⚙️ Setup & Installation
 
 ### 1) Prerequisites
@@ -334,10 +339,10 @@ loan_default_prediction/
 * **Docker** (24+)
 * **Docker Compose**
 * **Make**
-* **Python 3.10+** (only if you also want to run scripts locally)
+* **Python 3.10+** (optional, for local runs outside Docker)
 * A **GCP Service Account key (JSON)** with access to your GCS bucket (artifacts, predictions, reports)
 
-> ✅ This project uses real GCS (not a local emulator). Ensure your bucket exists and the SA has the right permissions.
+> If you’re in **Codespaces**, the `.devcontainer/devcontainer.json` ensures `gcloud`, `Terraform`, and `git-lfs` are installed automatically.
 
 
 ### 2) Clone the repository
@@ -389,7 +394,7 @@ openssl rand -hex 32
 
 ### 4) Place your GCP key (single location)
 
-Put the SA key at:
+Put your JSON key at:
 
 ```
 keys/gcs-service-account.json   # (gitignored)
@@ -424,15 +429,15 @@ make start
 * Airflow UI: [http://localhost:8080](http://localhost:8080)
 * MLflow UI:  [http://localhost:5000](http://localhost:5000)
 
-> This **does not** start model serving. Serving is a separate container (next step).
+⚠️ Note: This starts **core services only**. The **serving container** is started separately (after training).
 
 
-### 7) Start model serving (separate container)
+### 7) Start model serving (separate container, after training)
 
 ```bash
 make start-serve
 # health check
-curl -sS http://localhost:5001/ping
+curl -sS http://localhost:5001/ping      # expect HTTP 200
 ```
 
 * Serving API: [http://localhost:5001/invocations](http://localhost:5001/invocations)
@@ -448,7 +453,6 @@ To switch to Production later, update your alias (in `.env` or compose) and rest
 make stop-serve && make start-serve
 ```
 
-
 ### 8) Stop services
 
 ```bash
@@ -456,17 +460,7 @@ make stop-serve   # stops only the serving container
 make stop         # stops Airflow, MLflow, Postgres, etc.
 ```
 
-
-### 9) Troubleshooting
-
-```bash
-make troubleshoot
-# or view logs
-docker compose -f airflow/docker-compose.yaml logs -f webserver scheduler mlflow
-```
-
-
-### 10) Services quick reference
+### 9) Services quick reference
 
 | Service       | URL                                            | How to start       |
 | ------------- | ---------------------------------------------- | ------------------ |
@@ -478,7 +472,6 @@ docker compose -f airflow/docker-compose.yaml logs -f webserver scheduler mlflow
 
 
 ---
-
 ## ⚡ Quickstart (Train → Serve → Predict)
 
 ### 1) Start core services
@@ -645,7 +638,7 @@ Switching aliases:
 
 **Tips for reliability**
 
-* Pin versions in `requirements*.txt` (already done).
+* Pin versions in `requirements*.txt`.
 * Cache pip in CI to speed up runs.
 * Fail fast if health checks don’t pass within a timeout.
 * Keep integration jobs non-blocking on every push (e.g., run on PR label `integration` or nightly) to keep PR feedback fast.
@@ -874,7 +867,6 @@ RUN_INTEGRATION_TESTS=1 pytest -m integration -v
 
 
 ---
-
 ## 🔐 Secrets & Safety
 
 **Never commit secrets.** Use templates and mounts; keep real values local.
@@ -901,8 +893,7 @@ RUN_INTEGRATION_TESTS=1 pytest -m integration -v
 
 ### Principle of least privilege
 
-* Bucket-level IAM for the runtime SA: start with `roles/storage.objectAdmin` on the bucket
-* Restrict key download and rotate keys periodically
+* Grant **roles/storage.objectAdmin** to the runtime service account on the bucket.
 * For production, prefer **GCP Secret Manager** over JSON key files
 
 ### Scanning & pre-commit
@@ -940,12 +931,164 @@ pre-commit run --all-files
 
 
 ---
+## 💻 Devcontainer / Codespaces
 
+A `.devcontainer/devcontainer.json` is included for reproducible setup in **Codespaces** (or locally with VS Code + Remote Containers).
+
+It ensures:
+
+* `gcloud` CLI installed
+* `Terraform 1.13.1` installed
+* `git-lfs` installed (fixes GitHub push issues)
+* Python deps auto-installed
+
+On container start:
+
+```bash
+gcloud auth activate-service-account --key-file=keys/gcs-service-account.json
+gcloud config set project loan-default-mlops
+```
+
+→ This runs automatically, so you don’t need to re-run these commands manually every time.
+
+---
+
+
+---
+## 🛠 Troubleshooting
+
+Common issues and fixes when running the pipeline:
+
+
+### 1. **Serve container fails with `RESOURCE_DOES_NOT_EXIST`**
+
+**Error:**
+
+```
+mlflow.exceptions.RestException: RESOURCE_DOES_NOT_EXIST: Registered Model with name=loan_default_model not found
+```
+
+**Cause:** Serving started **before** a model was trained & registered.
+
+**Fix:**
+
+1. Start core services: `make start`
+2. Train a model via Airflow DAG `train_pipeline_dag`
+3. Confirm in MLflow UI → *Models* → `loan_default_model`
+4. Start serving: `make start-serve`
+
+
+### 2. **Permission denied writing artifacts (plots, reports)**
+
+**Error in Airflow logs:**
+
+```
+⚠️ Permission denied writing /opt/airflow/artifacts/feature_importance.png
+```
+
+**Cause:** Container doesn’t have write permissions on mounted `artifacts/`.
+
+**Fix:**
+
+* Run `make troubleshoot` (resets ownership and perms).
+* Or, inside Codespaces:
+
+```bash
+sudo chmod -R 777 artifacts/ airflow/artifacts/ airflow/logs/ mlruns/
+```
+
+
+### 3. **GCS access errors (403 / denied)**
+
+**Error:**
+
+```
+google.api_core.exceptions.Forbidden: 403 ... does not have storage.objects.get access
+```
+
+**Fix:**
+
+* Ensure your service account has IAM:
+
+  * `roles/storage.objectAdmin` (read/write)
+  * Or minimally `roles/storage.objectViewer` (read-only)
+* Verify key is mounted correctly:
+  `keys/gcs-service-account.json` → `/opt/airflow/keys/gcs-service-account.json`
+
+
+
+### 4. **Airflow webserver won’t start (healthcheck fails)**
+
+**Fix:**
+
+* Run `make troubleshoot` to tail logs.
+* Ensure no stale PID files:
+
+```bash
+rm -f airflow/airflow-webserver.pid airflow/airflow-scheduler.pid
+```
+
+* Rebuild clean:
+
+```bash
+make stop
+make start --fresh
+```
+
+
+### 5. **Integration tests fail in CI but pass locally**
+
+**Cause:** CI may start `serve` before model exists.
+
+**Fix:**
+
+* Restrict CI to lint + unit tests (`ci.yml`).
+* Run integration only on demand (`ci-integration.yml`).
+* Locally, run:
+
+```bash
+make start
+# train via Airflow
+make start-serve
+make integration-tests
+```
+
+
+### 6. **Git LFS blocking pushes**
+
+**Error:**
+
+```
+This repository is configured for Git LFS but 'git-lfs' was not found on your path
+```
+
+**Fix:**
+
+* Install git-lfs inside Codespaces (already automated in `.devcontainer`).
+* Or disable LFS hooks if not using LFS:
+
+```bash
+rm -f .git/hooks/pre-push .git/hooks/post-commit
+```
+
+
+🔑 **Tip:** When in doubt, run:
+
+```bash
+make troubleshoot
+docker compose -f airflow/docker-compose.yaml logs -f
+```
+This will surface most container-level issues.
+
+---
+
+
+---
 ## 🙏 Acknowledgments
 
 I would like to sincerely thank the following for their guidance, encouragement, and inspiration throughout the course of this project:
 
-* **The Datatalks.club mentors and peers**, whose feedback and discussions provided invaluable insights.
+* **The Datatalks.club mentors and peers**, whose instructions and feedback provided invaluable insights.
 * **The broader data science and MLOps community**, for sharing knowledge and best practices that shaped my approach.
 * **Family and friends**, for their unwavering support and patience during the many long hours dedicated to building and refining this project.
 
