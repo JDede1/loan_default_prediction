@@ -489,18 +489,24 @@ make start
 # MLflow UI  → http://localhost:5000
 ```
 
+> Note: This brings up **Postgres, Airflow, and MLflow only**.
+> The **serving container is not started yet** — you’ll do that after training.
+
+
 ### 2) Train & register the model (Airflow)
 
-In the Airflow UI, trigger this DAG in order:
+In the Airflow UI, trigger:
 
 1. **`train_pipeline_dag`**
 
+   * Trains a model on loan data
    * Logs runs to MLflow
    * Registers/updates **`loan_default_model@staging`**
 
-> Tip: In MLflow UI → “Models” you should see `loan_default_model` with alias **staging**.
+> Tip: In the MLflow UI under *Models*, you should now see `loan_default_model` with alias **staging**.
 
-### 3) Start model serving (alias-driven)
+
+### 3) Start model serving (after training)
 
 ```bash
 make start-serve
@@ -508,6 +514,7 @@ curl -sS http://localhost:5001/ping   # expect HTTP 200
 ```
 
 * Serving API: `POST http://localhost:5001/invocations`
+
 
 ### 4) Send a sample prediction
 
@@ -525,6 +532,7 @@ Or Python client:
 python src/predict.py
 ```
 
+
 ### 5) (Optional) Promote to Production
 
 In Airflow UI, run **`promote_model_dag`** to set alias:
@@ -538,10 +546,12 @@ Then restart serving to pick up the alias change:
 make stop-serve && make start-serve
 ```
 
+
 ### 6) Batch predict & monitor (Airflow)
 
-* **`batch_prediction_dag`** → scores `data/batch_input.csv`, writes predictions to artifacts/GCS.
-* **`monitoring_dag`** → generates Evidently drift reports; alerts/triggered actions per thresholds.
+* **`batch_prediction_dag`** → scores `data/batch_input.csv`, writes predictions to `artifacts/` and/or GCS.
+* **`monitoring_dag`** → generates Evidently drift reports; sends alerts/triggers retraining if thresholds breached.
+
 
 ### 7) Stop services
 

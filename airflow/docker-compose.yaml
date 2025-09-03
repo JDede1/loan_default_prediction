@@ -32,8 +32,8 @@ services:
 
   airflow-init:
     build:
-      context: .
-      dockerfile: ../Dockerfile.airflow
+      context: ..
+      dockerfile: Dockerfile.airflow
     platform: linux/amd64
     container_name: airflow-init
     user: "${AIRFLOW_UID:-50000}:0"
@@ -75,8 +75,8 @@ services:
 
   webserver:
     build:
-      context: .
-      dockerfile: ../Dockerfile.airflow
+      context: ..
+      dockerfile: Dockerfile.airflow
     platform: linux/amd64
     container_name: airflow-webserver
     user: "${AIRFLOW_UID:-50000}:0"
@@ -126,8 +126,8 @@ services:
 
   scheduler:
     build:
-      context: .
-      dockerfile: ../Dockerfile.airflow
+      context: ..
+      dockerfile: Dockerfile.airflow
     platform: linux/amd64
     container_name: airflow-scheduler
     user: "${AIRFLOW_UID:-50000}:0"

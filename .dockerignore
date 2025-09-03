@@ -50,3 +50,4 @@ artifacts/
 !requirements.txt
 !requirements-monitoring.txt
 !requirements.serve.txt
+!entrypoint.sh

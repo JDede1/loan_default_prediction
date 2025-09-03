@@ -1,0 +1,16 @@
+{
+    "name": "loan_default_prediction",
+    "image": "mcr.microsoft.com/devcontainers/python:3.10",
+    "features": {
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+    },
+    "postCreateCommand": "curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts && echo 'source /root/google-cloud-sdk/path.bash.inc' >> /root/.bashrc && gcloud components install gsutil -q",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-azuretools.vscode-docker"
+            ]
+        }
+    }
+}

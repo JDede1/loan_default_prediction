@@ -29,7 +29,7 @@ echo "ℹ️  Using AIRFLOW_UID=$AIRFLOW_UID"
 # ===== STEP 1: Rebuild images =====
 echo
 echo "🔄 STEP 1: Rebuilding required images..."
-docker compose -f "$COMPOSE_FILE" build webserver scheduler mlflow serve
+docker compose -f "$COMPOSE_FILE" build webserver scheduler mlflow 
 
 # ===== STEP 1.5: Prepare host directories =====
 mkdir -p "$MLRUNS_DIR" "$ARTIFACTS_DIR" "$LOGS_DIR" \
@@ -84,7 +84,7 @@ docker compose -f "$COMPOSE_FILE" run --rm airflow-init
 # ===== STEP 4: Fix container permissions BEFORE starting Airflow =====
 echo
 echo "🔧 STEP 4: Ensuring container permissions..."
-for service in webserver scheduler mlflow serve; do
+for service in webserver scheduler mlflow; do
     docker compose -f "$COMPOSE_FILE" run --rm --user root $service bash -c "
         mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/keys /tmp/artifacts &&
         chown -R ${AIRFLOW_UID}:0 /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/keys /tmp/artifacts &&
