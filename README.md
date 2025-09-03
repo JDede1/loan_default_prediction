@@ -681,7 +681,7 @@ This repository comes with standalone guides for specific topics:
 * [Terraform Setup](infra/terraform/README.md)  
   Instructions for provisioning the GCS bucket, service accounts, IAM roles, and optional remote state configuration.
 
-* [Security & Contribution Guide](SECURITY & CONTRIBUTING.md)  
+* [Security & Contribution Guide](SECURITY_AND_CONTRIBUTING.md)  
   Guidelines for handling secrets safely, contribution workflow, and coding standards.
 
 ---
