@@ -247,7 +247,8 @@ flowchart LR
 ```bash
 loan_default_prediction/
 ├── .devcontainer/                    # Codespaces/devcontainer setup
-│   └── devcontainer.json             # installs gcloud + Terraform + deps
+│   ├── devcontainer.json
+│   └── DEVCONTAINER.md               # explains gcloud/Terraform/LFS + auth
 │
 ├── .github/
 │   └── workflows/
@@ -261,15 +262,14 @@ loan_default_prediction/
 │   │   ├── monitoring_dag.py
 │   │   └── promote_model_dag.py
 │   ├── docker-compose.yaml           # Airflow + MLflow + Postgres + Serve + Terraform
-│   ├── start_all.sh / stop_all.sh
-│   ├── start_serve.sh / stop_serve.sh
-│   ├── troubleshoot.sh
 │   ├── airflow.cfg
 │   ├── webserver_config.py
 │   ├── create_airflow_user.sh
-│   ├── tests/                        # integration tests run inside containers
-│   └── tmp/                          # temp dir (runtime, gitignored)
-│   # (runtime dirs: airflow-logs/, logs/, mlruns/, artifacts/, keys/)
+│   ├── start_all.sh / stop_all.sh
+│   ├── start_serve.sh / stop_serve.sh
+│   ├── troubleshoot.sh
+│   ├── tests/                        # container-side integration helpers
+│   └── logs/ mlruns/ artifacts/ keys/ airflow-logs/  # runtime (gitignored)
 │
 ├── src/                              # Core ML code
 │   ├── train_with_mlflow.py
@@ -280,16 +280,17 @@ loan_default_prediction/
 │   ├── monitor_predictions.py
 │   ├── predict.py
 │   ├── utils.py
-│   └── config/                       # project-specific configs
+│   └── config/
 │
 ├── infra/
 │   └── terraform/
+│       ├── README.md                 # terraform-specific guide
 │       ├── main.tf
 │       ├── variables.tf
 │       ├── outputs.tf
+│       ├── terraform.tfvars          # gitignored (real values)
 │       ├── terraform.tfstate*        # gitignored
-│       ├── .terraform/               # gitignored
-│       └── terraform.tfvars          # gitignored (real values)
+│       └── .terraform/               # gitignored
 │
 ├── tests/                            # host-side unit/integration tests
 │   ├── test_utils.py
@@ -300,8 +301,8 @@ loan_default_prediction/
 │   ├── batch_input.csv
 │   └── sample_input.json
 │
-├── notebooks/                        # exploratory notebooks
-├── docker/                           # auxiliary docker configs (if any)
+├── notebooks/
+├── docker/
 ├── artifacts/                        # generated; gitignored
 ├── mlruns/                           # generated; gitignored
 │
@@ -321,6 +322,8 @@ loan_default_prediction/
 ├── .flake8
 ├── pyproject.toml
 ├── pytest.ini
+├── SECURITY_AND_CONTRIBUTING.md      # secrets + contribution guide
+├── TROUBLESHOOTING.md                # common errors and fixes
 ├── LICENSE
 └── README.md
 ```
