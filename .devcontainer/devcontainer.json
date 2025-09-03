@@ -4,10 +4,11 @@
 
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/terraform:1": { "version": "1.9.5" }
+    "ghcr.io/devcontainers/features/terraform:1": { "version": "1.9.5" },
+    "ghcr.io/devcontainers/features/google-cloud-sdk:1": {}
   },
 
-  "postCreateCommand": "apt-get update && apt-get install -y curl apt-transport-https ca-certificates gnupg && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor > /usr/share/keyrings/cloud.google.gpg && echo \"deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main\" > /etc/apt/sources.list.d/google-cloud-sdk.list && apt-get update && apt-get install -y google-cloud-sdk && pip install --upgrade pip && pip install -r requirements-dev.txt && pip install -r requirements.txt",
+  "postCreateCommand": "pip install --upgrade pip && pip install -r requirements-dev.txt && pip install -r requirements.txt",
 
   "customizations": {
     "vscode": {
