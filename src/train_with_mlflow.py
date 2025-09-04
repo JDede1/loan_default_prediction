@@ -188,6 +188,7 @@ def log_and_register_model(
             artifact_path="model",
             signature=signature,
             input_example=input_example,
+            pip_requirements="/opt/airflow/requirements.serve.txt",  # ✅ added for reproducibility
         )
 
         # Save & log plots

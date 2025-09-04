@@ -66,10 +66,11 @@ The pipeline covers the full machine learning lifecycle:
 
 **Repro tips**
 
-* Keep the cleaned training CSV immutable; write derived artifacts (predictions, reports) to separate prefixes:
+* Keep the cleaned training CSV immutable; write derived artifacts (predictions, reports, markers) to separate prefixes:
 
   * Predictions → `gs://loan-default-artifacts-loan-default-mlops/predictions/...`
   * Monitoring reports → `gs://loan-default-artifacts-loan-default-mlops/reports/...`
+  * Latest marker → `gs://loan-default-artifacts-loan-default-mlops/predictions/latest_prediction.txt`
 
 ---
 
@@ -211,6 +212,8 @@ flowchart LR
 * **MLflow 3.1.4** (single version across: tracking server, clients, and `requirements.serve.txt`)
 
   * Experiments, Model Registry (aliases), and REST serving
+  * Models are logged with **explicit serving dependencies** from `requirements.serve.txt`, preventing
+    MLflow from inferring requirements at runtime and keeping serving reproducible.
 * *(Optional)* **Optuna** for HPO
 
   * If used, ensure `optuna` is added to `requirements.txt` (pinned); otherwise omit
@@ -399,6 +402,9 @@ GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json
 # MLflow (model naming)
 MODEL_NAME=loan_default_model
 MODEL_ALIAS=staging
+
+# Monitoring backend
+STORAGE_BACKEND=gcs
 ```
 
 Generate fresh keys (recommended):
@@ -451,7 +457,18 @@ make start
 * Airflow UI: [http://localhost:8080](http://localhost:8080)
 * MLflow UI:  [http://localhost:5000](http://localhost:5000)
 
-⚠️ Note: This starts **core services only**. The **serving container** is started separately (after training).
+⚠️ Note: If you see warnings like: ⚠️ Permission denied writing /opt/airflow/artifacts/feature_importance.png
+
+
+Run the following to reset permissions (also available as a Makefile target):
+
+```bash
+make fix-perms
+```
+
+👉 See also: [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for artifact permission fixes and
+the `make fix-perms` command.
+
 
 ### 7) Ports
 
@@ -574,8 +591,14 @@ make stop-serve && make start-serve
 
 ### 6) Batch predict & monitor (Airflow)
 
-* **`batch_prediction_dag`** → scores `data/batch_input.csv`, writes predictions to `artifacts/` and/or GCS.
-* **`monitoring_dag`** → generates Evidently drift reports; sends alerts/triggers retraining if thresholds breached.
+* **`batch_prediction_dag`** → scores `data/batch_input.csv`, writes predictions to `artifacts/` and GCS.
+  After each run, it also updates `gs://${GCS_BUCKET}/predictions/latest_prediction.txt`
+  so monitoring always picks up the newest predictions.
+
+* **`monitoring_dag`** → generates Evidently drift reports by comparing training data against the
+  predictions pointed to by `latest_prediction.txt`. Reports are saved locally and in GCS;
+  can alert and/or trigger retraining if thresholds are breached.
+
 
 
 ### 7) Stop services

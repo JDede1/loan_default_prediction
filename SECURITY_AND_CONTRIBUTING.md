@@ -7,7 +7,8 @@
 * Real `.env` (commit **`.env.example`** only)
 * `keys/gcs-service-account.json` (gitignored)
 * Terraform state & tfvars (`infra/terraform/.terraform/`, `terraform.tfstate*`, `terraform.tfvars`)
-* Runtime artifacts/logs (`airflow/logs/`, `airflow/mlruns/`, `artifacts/`, root `mlruns/`)
+* Runtime artifacts/logs (`airflow/logs/`, `airflow/mlruns/`, `airflow/artifacts/`, root `mlruns/`, `artifacts/`)
+* Any real prediction outputs (`predictions_*.csv`)
 
 ### Safe templates
 
@@ -25,7 +26,8 @@
 ### Principle of least privilege
 
 * Grant **roles/storage.objectAdmin** to the runtime service account on the bucket.
-* For production, prefer **GCP Secret Manager** over JSON key files
+* For production, prefer **GCP Secret Manager** over JSON key files.
+* Do **not** grant overly broad roles like `roles/storage.admin` unless prototyping.
 
 ### Scanning & pre-commit
 
@@ -58,7 +60,6 @@ pip install pre-commit
 pre-commit install
 pre-commit run --all-files
 ```
----
 
 ---
 ## 🧑‍💻 Development & Contribution
@@ -101,7 +102,6 @@ make test
 * **Mypy** → Static type checking
 * **Pytest** → Unit & integration testing
 
-
 ### Git Workflow
 
 1. **Create a feature branch**
@@ -141,4 +141,5 @@ RUN_INTEGRATION_TESTS=1 pytest -m integration -v
 * Add/update tests for new features.
 * Ensure `make lint format test` passes before submitting PR.
 * Document new features in the **README** or inline code comments.
+
 ---
