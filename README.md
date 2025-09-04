@@ -10,7 +10,7 @@ This project implements an **end-to-end MLOps pipeline** for predicting loan def
 
 
 ---
-## ✅Capstone Evaluation Criteria Mapping
+## ✅ Capstone Evaluation Criteria Mapping
 
 This project meets the **DataTalksClub MLOps Zoomcamp** capstone requirements:
 
@@ -242,7 +242,7 @@ flowchart LR
 
 
 ---
-## 📂 Repository Structure (updated)
+## 📂 Repository Structure
 
 ```bash
 loan_default_prediction/
@@ -330,6 +330,25 @@ loan_default_prediction/
 
 **Generated/ignored paths (not to commit):**
 `airflow/airflow-logs/`, `airflow/logs/`, `airflow/mlruns/`, `airflow/artifacts/`, `artifacts/`, `mlruns/`, `.pytest_cache/`, `infra/terraform/.terraform/`, `infra/terraform/terraform.tfstate*`, `keys/gcs-service-account.json`, `.env`
+
+---
+
+---
+## 📖 Documentation
+
+This repository comes with standalone guides for specific topics:
+
+* [Troubleshooting Guide](TROUBLESHOOTING.md)  
+  Common errors and fixes (e.g., `RESOURCE_DOES_NOT_EXIST`, artifact permission denied, Airflow PID files).
+
+* [Devcontainer / Codespaces Setup](.devcontainer/DEVCONTAINER.md)  
+  Why a devcontainer is included, how it installs **gcloud**, Terraform, and Git LFS, and how authentication works automatically.
+
+* [Terraform Setup](infra/terraform/README.md)  
+  Instructions for provisioning the GCS bucket, service accounts, IAM roles, and optional remote state configuration.
+
+* [Security & Contribution Guide](SECURITY_AND_CONTRIBUTING.md)  
+  Guidelines for handling secrets safely, contribution workflow, and coding standards.
 
 ---
 
@@ -434,8 +453,18 @@ make start
 
 ⚠️ Note: This starts **core services only**. The **serving container** is started separately (after training).
 
+### 7) Ports
 
-### 7) Start model serving (separate container, after training)
+| Service       | Port |
+|---------------|------|
+| Airflow UI    | 8080 |
+| MLflow UI     | 5000 |
+| Serving API   | 5001 |
+| Postgres      | 5432 (internal)
+
+
+
+### 8) Start model serving (separate container, after training)
 
 ```bash
 make start-serve
@@ -456,14 +485,14 @@ To switch to Production later, update your alias (in `.env` or compose) and rest
 make stop-serve && make start-serve
 ```
 
-### 8) Stop services
+### 9) Stop services
 
 ```bash
 make stop-serve   # stops only the serving container
 make stop         # stops Airflow, MLflow, Postgres, etc.
 ```
 
-### 9) Services quick reference
+### 10) Services quick reference
 
 | Service       | URL                                            | How to start       |
 | ------------- | ---------------------------------------------- | ------------------ |
@@ -612,6 +641,15 @@ Switching aliases:
 
 > For exact commands, see **Quickstart**. Prefer Airflow DAGs for the real pipeline.
 
+
+### D) Make targets (quick reference)
+
+- `make start` — build & start Airflow stack (Airflow, MLflow, Postgres)
+- `make start-serve` — start serving container (after a model exists)
+- `make stop-serve` — stop serving only
+- `make stop` — stop full stack
+- `make install` — install local Python deps (optional)
+
 ---
 
 
@@ -666,26 +704,6 @@ flowchart TD
   J --> K[Integration status reported]
 ```
 *note:* The integration workflow is **experimental**. It runs locally via `make integration-tests`, and the GitHub Actions job is being debugged; no README badge until it’s stable.
-
----
-
-
----
-## 📖 Documentation
-
-This repository comes with standalone guides for specific topics:
-
-* [Troubleshooting Guide](TROUBLESHOOTING.md)  
-  Common errors and fixes (e.g., `RESOURCE_DOES_NOT_EXIST`, artifact permission denied, Airflow PID files).
-
-* [Devcontainer / Codespaces Setup](.devcontainer/DEVCONTAINER.md)  
-  Why a devcontainer is included, how it installs **gcloud**, Terraform, and Git LFS, and how authentication works automatically.
-
-* [Terraform Setup](infra/terraform/README.md)  
-  Instructions for provisioning the GCS bucket, service accounts, IAM roles, and optional remote state configuration.
-
-* [Security & Contribution Guide](SECURITY_AND_CONTRIBUTING.md)  
-  Guidelines for handling secrets safely, contribution workflow, and coding standards.
 
 ---
 
