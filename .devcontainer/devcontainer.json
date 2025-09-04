@@ -1,14 +1,11 @@
 {
   "name": "loan_default_prediction",
-  "image": "mcr.microsoft.com/devcontainers/python:3.10",
-
+  "image": "mcr.microsoft.com/devcontainers/python:3.10-bookworm",  // ✅ use Ubuntu/Debian stable
   "features": {
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},   // ✅ add this
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
     "ghcr.io/devcontainers/features/terraform:1": { "version": "1.13.1" }
   },
-
   "postCreateCommand": "sudo apt-get update && sudo apt-get install -y curl apt-transport-https ca-certificates gnupg git-lfs && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg && echo \"deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main\" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list && sudo apt-get update && sudo apt-get install -y google-cloud-sdk && git lfs install && gcloud auth activate-service-account --key-file=keys/gcs-service-account.json && gcloud config set project loan-default-mlops && pip install --upgrade pip && pip install -r requirements-dev.txt && pip install -r requirements.txt",
-
   "customizations": {
     "vscode": {
       "extensions": [
