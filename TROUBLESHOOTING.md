@@ -1,4 +1,4 @@
-## 🛠 Troubleshooting
+# 🛠 Troubleshooting
 
 Common issues and fixes when running the pipeline:
 
@@ -6,15 +6,15 @@ Common issues and fixes when running the pipeline:
 ### 1. **Serve container fails with `RESOURCE_DOES_NOT_EXIST`**
 
 **Error:**
+
 ```
-
-mlflow\.exceptions.RestException: RESOURCE\_DOES\_NOT\_EXIST: Registered Model with name=loan\_default\_model not found
-
+mlflow.exceptions.RestException: RESOURCE_DOES_NOT_EXIST: Registered Model with name=loan_default_model not found
 ```
 
 **Cause:** Serving container started **before** a model exists in the MLflow Registry.
 
 **Fix:**
+
 1. Start core services: `make start`
 2. Train a model via Airflow DAG `train_pipeline_dag`
 3. Confirm in MLflow UI → *Models* → `loan_default_model`
@@ -24,22 +24,24 @@ mlflow\.exceptions.RestException: RESOURCE\_DOES\_NOT\_EXIST: Registered Model w
 ### 2. **Permission denied writing artifacts (plots, reports)**
 
 **Error in Airflow logs:**
+
 ```
-
-⚠️ Permission denied writing /opt/airflow/artifacts/feature\_importance.png
-
-````
+⚠️ Permission denied writing /opt/airflow/artifacts/feature_importance.png
+```
 
 **Cause:** Container doesn’t have write permissions on mounted `artifacts/`.
 
 **Fix:**
+
 * Run `make fix-perms` (new Make target to reset ownership and perms).
 * Or, inside Codespaces, run manually:
+
   ```bash
   sudo chmod -R 777 artifacts/ airflow/artifacts/ airflow/logs/ mlruns/
-````
+  ```
 
 This ensures Airflow tasks can write plots and reports directly to the mounted artifact dirs, instead of falling back to `/tmp/artifacts`.
+
 
 ### 3. **MLflow Git SHA warnings**
 
@@ -59,6 +61,7 @@ make stop
 make start
 ```
 
+
 ### 4. **MLflow requirements inference warnings**
 
 **Error in logs:**
@@ -71,6 +74,7 @@ WARNING mlflow.utils.environment: Encountered an unexpected error while inferrin
 
 **Fix:**
 We now provide a pinned `requirements.serve.txt` when logging models. This ensures serving uses the exact same dependency versions as training, avoiding inference issues.
+
 
 ### 5. **GCS access errors (403 / denied)**
 
@@ -89,6 +93,7 @@ google.api_core.exceptions.Forbidden: 403 ... does not have storage.objects.get 
 * Verify key is mounted correctly:
   `keys/gcs-service-account.json` → `/opt/airflow/keys/gcs-service-account.json`
 
+
 ### 6. **Airflow webserver won’t start (healthcheck fails)**
 
 **Fix:**
@@ -106,22 +111,29 @@ google.api_core.exceptions.Forbidden: 403 ... does not have storage.objects.get 
   make start --fresh
   ```
 
-### 7. **Integration tests fail in CI but pass locally**
 
-**Cause:** CI may start `serve` before model exists.
+### 7. **Integration tests fail (`serve` not found)**
+
+**Error:**
+
+```
+HTTPConnectionPool(host='serve', port=5001): Max retries exceeded with url: /invocations (Caused by NameResolutionError...)
+```
+
+**Cause:** Previously, `serve` was not running in the same Compose network when integration tests executed.
 
 **Fix:**
+The `make integration-tests` target now automatically brings up `serve` before running tests.
+Simply run:
 
-* Restrict CI to lint + unit tests (`ci.yml`).
-* Run integration only on demand (`ci-integration.yml`).
-* Locally, run:
+```bash
+make start
+make integration-tests
+make stop
+```
 
-  ```bash
-  make start
-  # train via Airflow
-  make start-serve
-  make integration-tests
-  ```
+No manual `make start-serve` step is required anymore.
+
 
 ### 8. **Git LFS blocking pushes**
 
@@ -140,6 +152,18 @@ This repository is configured for Git LFS but 'git-lfs' was not found on your pa
   rm -f .git/hooks/pre-push .git/hooks/post-commit
   ```
 
+
+### 9. **“Docker-in-Docker” feature fails in Codespaces**
+
+**Why**
+Codespaces already provides Docker — no need for DinD.
+
+**Fix**
+
+* Ensure `.devcontainer/devcontainer.json` does **not** include `docker-in-docker` feature.
+* Use the provided devcontainer that installs `gcloud`, Terraform, and `git-lfs` only.
+
+
 🔑 **Tip:** When in doubt, run:
 
 ```bash
@@ -148,15 +172,5 @@ docker compose -f airflow/docker-compose.yaml logs -f
 ```
 
 This will surface most container-level issues.
-
-### 9) “Docker-in-Docker” feature fails in Codespaces
-
-**Why**
-Codespaces already provides Docker—no need for DinD.
-
-**Fix**
-
-* Ensure `.devcontainer/devcontainer.json` does **not** include `docker-in-docker` feature.
-* Use the provided devcontainer that installs `gcloud`, Terraform, and `git-lfs` only.
 
 ---

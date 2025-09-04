@@ -112,22 +112,7 @@ jobs:
               --data_path /opt/airflow/data/loan_default_selected_features_clean.csv \
               --model_name loan_default_model --alias staging
 
-      # Start model-serve
-      - name: Start model-serve
-        run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d serve
-
-      # Health check for serve
-      - name: Wait for Serve API to be healthy
-        run: |
-          echo "⏳ Waiting for Serve…"
-          ok=0
-          for i in {1..60}; do
-            curl -sf http://localhost:5001/invocations -H "Content-Type: application/json" -d '{"dataframe_split": {"columns": [], "data": []}}' | grep -q 'error_code' && ok=1 && break
-            sleep 3
-          done
-          [ "$ok" -eq 1 ] || { echo "❌ Serve API did not become reachable"; exit 1; }
-
-      # Run integration tests
+      # Run integration tests (Makefile target)
       - name: Run integration tests (Makefile target)
         run: make integration-tests
 

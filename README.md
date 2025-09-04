@@ -665,13 +665,14 @@ Switching aliases:
 > For exact commands, see **Quickstart**. Prefer Airflow DAGs for the real pipeline.
 
 
-### D) Make targets (quick reference)
+ ### D) Make targets (quick reference)
 
-- `make start` — build & start Airflow stack (Airflow, MLflow, Postgres)
-- `make start-serve` — start serving container (after a model exists)
-- `make stop-serve` — stop serving only
-- `make stop` — stop full stack
-- `make install` — install local Python deps (optional)
+ - `make start` — build & start Airflow stack (Airflow, MLflow, Postgres)
+ - `make start-serve` — start serving container (after a model exists)
+ - `make stop-serve` — stop serving only
+ - `make stop` — stop full stack
+ - `make install` — install local Python deps (optional)
+ - `make integration-tests` — run full end-to-end tests inside Airflow, including serving; auto-brings up `serve`
 
 ---
 
@@ -687,12 +688,13 @@ Switching aliases:
   * **Lint/format checks:** `flake8`, `black --check`, `isort --check-only`
   * **Unit tests:** `pytest -q` (excludes `-m integration`)
   * (Optional) **type checks:** `mypy` if enabled in `ci.yml`
-* **`.github/workflows/ci-integration.yml`** — end-to-end integration on demand or on PR label:
 
-  * Bring up **Airflow + MLflow + Postgres + Serve** via `airflow/docker-compose.yaml`
-  * Wait for health (webserver `/health`, serve `/ping`)
-  * **Integration tests:** `pytest -m integration -v`
-  * Tear down stack
+ * **`.github/workflows/ci-integration.yml`** — end-to-end integration on demand or on PR label:
+ 
+  * Calls `make integration-tests` which:
+  * Brings up Airflow + MLflow + Postgres + Serve
+  * Runs integration tests (`pytest -m integration -v`) inside the Airflow webserver container
+  * Tears everything down cleanly
 
 **What the pipelines enforce**
 
@@ -710,7 +712,7 @@ Switching aliases:
 **Local equivalents**
 
 * Fast loop: `make lint && make test`
-* Full stack (local): `make start && make start-serve && make integration-tests` then `make stop-serve && make stop`
+* Full stack (local): `make start && make integration-tests` then `make stop` 
 
 ```mermaid
 flowchart TD

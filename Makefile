@@ -47,8 +47,9 @@ terraform-apply:
 terraform-destroy:
 	docker compose -f airflow/docker-compose.yaml run --rm terraform "terraform destroy -auto-approve"
 
-# === Integration Tests (run inside webserver container) ===
+# === Integration Tests (run inside webserver container, ensure serve is up) ===
 integration-tests:
+	docker compose -f airflow/docker-compose.yaml up -d serve
 	docker compose -f airflow/docker-compose.yaml run --rm \
 		--workdir /opt/airflow \
 		--entrypoint "" \
@@ -57,6 +58,7 @@ integration-tests:
 		-e MLFLOW_TRACKING_URI=http://mlflow:5000 \
 		-e GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json \
 		webserver pytest tests -m integration -v
+	docker compose -f airflow/docker-compose.yaml down --remove-orphans
 
 # === Permissions (prevent artifact/log write failures) ===
 fix-perms:
