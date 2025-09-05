@@ -26,8 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Switch back to airflow user before installing Python dependencies
 USER airflow
 
-# Copy Python requirements and install them
-COPY requirements.txt requirements-dev.txt ./
+# Copy Python requirements (all variants) and install
+COPY requirements.txt requirements-dev.txt requirements.serve.txt ./
 RUN python -m pip install --no-cache-dir -r requirements.txt \
    && python -m pip install --no-cache-dir -r requirements-dev.txt
 
