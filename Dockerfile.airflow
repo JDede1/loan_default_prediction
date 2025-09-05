@@ -6,29 +6,31 @@ USER root
 
 # Install bash, compiler tools, DB drivers, git, and Google Cloud SDK (gcloud + gsutil)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-   bash \
-   build-essential \
-   default-libmysqlclient-dev \
-   libpq-dev \
-   git \
-   curl \
-   apt-transport-https \
-   ca-certificates \
-   gnupg \
-   && mkdir -p /usr/share/keyrings \
-   && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg \
-   | gpg --dearmor > /usr/share/keyrings/cloud.google.gpg \
-   && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
-   > /etc/apt/sources.list.d/google-cloud-sdk.list \
-   && apt-get update && apt-get install -y google-cloud-sdk \
-   && rm -rf /var/lib/apt/lists/*
+    bash \
+    build-essential \
+    default-libmysqlclient-dev \
+    libpq-dev \
+    git \
+    curl \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+ && mkdir -p /usr/share/keyrings \
+ && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+    | gpg --dearmor > /usr/share/keyrings/cloud.google.gpg \
+ && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
+    > /etc/apt/sources.list.d/google-cloud-sdk.list \
+ && apt-get update && apt-get install -y google-cloud-sdk \
+ && rm -rf /var/lib/apt/lists/*
 
 # Switch back to airflow user before installing Python dependencies
 USER airflow
-
-# Copy Python requirements (all variants) and install
-COPY requirements.txt requirements-dev.txt requirements.serve.txt ./
-RUN python -m pip install --no-cache-dir -r requirements.txt \
-   && python -m pip install --no-cache-dir -r requirements-dev.txt
-
 WORKDIR /opt/airflow
+
+# Install Python dependencies
+COPY requirements.txt requirements-dev.txt ./
+RUN python -m pip install --no-cache-dir -r requirements.txt \
+ && python -m pip install --no-cache-dir -r requirements-dev.txt
+
+# Make MLflow serving requirements file available (for training logs → model packaging)
+COPY requirements.serve.txt /opt/airflow/requirements.serve.txt

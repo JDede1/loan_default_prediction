@@ -4,7 +4,6 @@ set -euo pipefail
 echo "🔍 Airflow, MLflow & Serving Troubleshooting Script"
 
 # ===== CONFIG =====
-# Resolve repo root dynamically (works from anywhere)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="$REPO_ROOT/.env"
@@ -21,7 +20,16 @@ echo "🔍 STEP 1: Checking Docker Compose service status..."
 docker compose -f "$COMPOSE_FILE" ps
 
 echo
-echo "📋 STEP 2: Listing all services from docker-compose.yaml..."
+echo "📋 STEP 2: Checking host-side log and artifact permissions..."
+ls -ld "$AIRFLOW_LOGS_DIR" "$AIRFLOW_ARTIFACTS_DIR" "$MLRUNS_DIR" "$ARTIFACTS_DIR" 2>/dev/null || true
+
+if [ ! -w "$AIRFLOW_LOGS_DIR" ] || [ ! -d "$AIRFLOW_LOGS_DIR/dag_processor_manager" ]; then
+    echo "🛠  Host logs dir not writable or missing subfolder — running make fix-perms..."
+    make fix-perms || true
+fi
+
+echo
+echo "📋 STEP 3: Listing all services from docker-compose.yaml..."
 services=$(docker compose -f "$COMPOSE_FILE" config --services)
 
 for service in $services; do
@@ -88,7 +96,7 @@ for service in $services; do
 done
 
 echo
-echo "🔹 STEP 3: Checking if Airflow DB is initialized..."
+echo "🔹 STEP 4: Checking if Airflow DB is initialized..."
 if ! docker compose -f "$COMPOSE_FILE" exec webserver airflow db check >/dev/null 2>&1; then
     echo "⚙️  Airflow DB not initialized — running airflow-init..."
     docker compose -f "$COMPOSE_FILE" run --rm airflow-init
@@ -97,7 +105,7 @@ else
 fi
 
 echo
-echo "🔹 STEP 4: Verifying Airflow Webserver health..."
+echo "🔹 STEP 5: Verifying Airflow Webserver health..."
 MAX_RETRIES=30
 COUNTER=0
 until curl --silent http://localhost:8080/health | grep -q '"status":"healthy"'; do
@@ -112,7 +120,7 @@ done
 echo "✅ Airflow Webserver is healthy!"
 
 echo
-echo "🔹 STEP 5: Verifying MLflow health..."
+echo "🔹 STEP 6: Verifying MLflow health..."
 if curl --silent http://localhost:5000 >/dev/null; then
     echo "✅ MLflow UI is reachable!"
 else
@@ -120,16 +128,15 @@ else
 fi
 
 echo
-echo "🔹 STEP 5.5: Verifying Serve API health..."
+echo "🔹 STEP 7: Verifying Serve API health..."
 if curl --silent -X POST http://localhost:5001/invocations -H "Content-Type: application/json" -d '{"dataframe_split": {"columns": [], "data": []}}' | grep -q 'error_code'; then
     echo "✅ Serve API is responding!"
 else
     echo "❌ Serve API not responding at http://localhost:5001/invocations"
 fi
 
-# === Phase 2: List relevant Airflow Variables ===
 echo
-echo "🔹 STEP 6: Listing Phase 2 & Phase 3 Airflow Variables..."
+echo "🔹 STEP 8: Listing critical Airflow Variables..."
 PHASE_VARS=("MODEL_ALIAS" "PREDICTION_INPUT_PATH" "PREDICTION_OUTPUT_PATH" "STORAGE_BACKEND" "GCS_BUCKET" "LATEST_PREDICTION_PATH" \
             "MODEL_NAME" "PROMOTE_FROM_ALIAS" "PROMOTE_TO_ALIAS" "PROMOTION_AUC_THRESHOLD" "PROMOTION_F1_THRESHOLD" \
             "PROMOTION_TRIGGER_SOURCE" "PROMOTION_TRIGGERED_BY" "SLACK_WEBHOOK_URL" "ALERT_EMAILS")
@@ -140,5 +147,5 @@ for var in "${PHASE_VARS[@]}"; do
 done
 
 echo
-echo "✅ STEP 7: Final service status:"
+echo "✅ STEP 9: Final service status:"
 docker compose -f "$COMPOSE_FILE" ps

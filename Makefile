@@ -62,9 +62,12 @@ integration-tests:
 
 # === Permissions (prevent artifact/log write failures) ===
 fix-perms:
-	mkdir -p artifacts airflow/artifacts airflow/logs mlruns
+	# Ensure local dirs exist for bind mounts
+	mkdir -p artifacts airflow/artifacts airflow/tmp mlruns airflow/logs
 	# Codespaces has sudo; this fixes container write perms to mounted volumes
-	sudo chmod -R 777 artifacts airflow/artifacts airflow/logs mlruns
+	sudo chmod -R 777 artifacts airflow/artifacts airflow/tmp mlruns airflow/logs
+	# Pre-create subfolder expected by Airflow
+	mkdir -p airflow/logs/dag_processor_manager
 
 # === One-shot setup for fresh envs (optional) ===
 bootstrap:

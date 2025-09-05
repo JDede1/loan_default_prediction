@@ -1,11 +1,12 @@
-name: airflow  
+name: airflow
 
 volumes:
   postgres-db-volume:
   airflow-logs:
-  mlflow-runs:        # still used for backend store
+  mlflow-runs: # still used for backend store
   airflow-artifacts:
-  airflow-tmp:        # ✅ new volume for tmp dir
+  airflow-tmp:
+    # ✅ new volume for tmp dir
 
 networks:
   airflow:
@@ -45,9 +46,9 @@ services:
     command:
       - -c
       - |
-        mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs /opt/airflow/tmp
-        chown -R airflow:root /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs /opt/airflow/tmp
-        chmod -R 775 /opt/airflow/mlruns /opt/airflow/artifacts /home/airflow/logs /opt/airflow/tmp
+        mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/logs /opt/airflow/tmp
+        chown -R airflow:root /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/logs /opt/airflow/tmp
+        chmod -R 775 /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/logs /opt/airflow/tmp
         if jq -e '.client_email' /opt/airflow/keys/gcs-service-account.json >/dev/null 2>&1; then
           gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
         else
@@ -56,14 +57,17 @@ services:
         airflow db init &&
         bash /opt/airflow/create_airflow_user.sh || true
     volumes:
-      - ./:/opt/airflow
+      # Mount only what Airflow needs (no full repo mount!)
+      - ../airflow/dags:/opt/airflow/dags
+      - ../airflow/create_airflow_user.sh:/opt/airflow/create_airflow_user.sh:ro
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
       - ../tests:/opt/airflow/tests
       - ../pytest.ini:/opt/airflow/pytest.ini:ro
+      # Persistent volumes
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
-      - airflow-logs:/home/airflow/logs
+      - airflow-logs:/opt/airflow/logs
       - airflow-tmp:/opt/airflow/tmp
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     depends_on:
@@ -88,10 +92,10 @@ services:
     command:
       - -c
       - |
-        rm -f /home/airflow/airflow-webserver.pid || true
-        mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
+        rm -f /opt/airflow/airflow-webserver.pid || true
+        mkdir -p /opt/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
+        chown -R airflow:root /opt/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
+        chmod -R 775 /opt/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
         if jq -e '.client_email' /opt/airflow/keys/gcs-service-account.json >/dev/null 2>&1; then
           gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
         else
@@ -101,14 +105,16 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./:/opt/airflow
+      # Mount only what Airflow needs (no full repo mount!)
+      - ../airflow/dags:/opt/airflow/dags
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
       - ../tests:/opt/airflow/tests
       - ../pytest.ini:/opt/airflow/pytest.ini:ro
+      # Persistent volumes
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
-      - airflow-logs:/home/airflow/logs
+      - airflow-logs:/opt/airflow/logs
       - airflow-tmp:/opt/airflow/tmp
       - /var/run/docker.sock:/var/run/docker.sock
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
@@ -139,9 +145,9 @@ services:
     command:
       - -c
       - |
-        mkdir -p /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        chown -R airflow:root /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        chmod -R 775 /home/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
+        mkdir -p /opt/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
+        chown -R airflow:root /opt/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
+        chmod -R 775 /opt/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
         if jq -e '.client_email' /opt/airflow/keys/gcs-service-account.json >/dev/null 2>&1; then
           gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
         else
@@ -149,14 +155,16 @@ services:
         fi
         exec airflow scheduler
     volumes:
-      - ./:/opt/airflow
+      # Mount only what Airflow needs (no full repo mount!)
+      - ../airflow/dags:/opt/airflow/dags
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
       - ../tests:/opt/airflow/tests
       - ../pytest.ini:/opt/airflow/pytest.ini:ro
+      # Persistent volumes
       - airflow-artifacts:/opt/airflow/artifacts
       - mlflow-runs:/opt/airflow/mlruns
-      - airflow-logs:/home/airflow/logs
+      - airflow-logs:/opt/airflow/logs
       - airflow-tmp:/opt/airflow/tmp
       - /var/run/docker.sock:/var/run/docker.sock
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
@@ -177,10 +185,7 @@ services:
     volumes:
       - mlflow-runs:/opt/airflow/mlruns
     command: >
-      mlflow server 
-      --backend-store-uri file:/opt/airflow/mlruns
-      --default-artifact-root gs://loan-default-artifacts-loan-default-mlops/mlflow
-      --host 0.0.0.0 --port 5000
+      mlflow server  --backend-store-uri file:/opt/airflow/mlruns --default-artifact-root gs://loan-default-artifacts-loan-default-mlops/mlflow --host 0.0.0.0 --port 5000
     networks:
       - airflow
 
@@ -196,20 +201,20 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
       MODEL_NAME: loan_default_model
-      MODEL_ALIAS: staging   # change to production when promoting
+      MODEL_ALIAS: staging # change to production when promoting
       PORT: 5001
     volumes:
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     depends_on:
       - mlflow
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:5001/ping"]
+      test: [ "CMD", "curl", "--fail", "http://localhost:5001/ping" ]
       interval: 10s
       timeout: 10s
       retries: 5
     networks:
       - airflow
-      
+
   terraform:
     build:
       context: ..
@@ -222,6 +227,6 @@ services:
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
-    entrypoint: ["/bin/bash", "-c"]
+    entrypoint: [ "/bin/bash", "-c" ]
     networks:
       - airflow
