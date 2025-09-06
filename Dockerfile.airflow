@@ -1,42 +1,31 @@
-# Use official Airflow image (Python 3.10)
+# Use official Airflow image
 FROM apache/airflow:2.8.1-python3.10
 
 # ------------------------------------------------------------------
-# System dependencies
+# Minimal system deps
 # ------------------------------------------------------------------
 USER root
-
-# Install bash, compiler tools, DB drivers, git, and Google Cloud SDK (gcloud + gsutil)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
-    build-essential \
-    default-libmysqlclient-dev \
     libpq-dev \
     git \
-    curl \
-    apt-transport-https \
-    ca-certificates \
-    gnupg \
- && mkdir -p /usr/share/keyrings \
- && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg \
-    | gpg --dearmor > /usr/share/keyrings/cloud.google.gpg \
- && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
-    > /etc/apt/sources.list.d/google-cloud-sdk.list \
- && apt-get update && apt-get install -y --no-install-recommends google-cloud-sdk \
  && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------------------
-# Python dependencies
+# Python setup
 # ------------------------------------------------------------------
 USER airflow
 WORKDIR /opt/airflow
 
-# Copy requirements
-COPY requirements.txt requirements-dev.txt ./
+# Move pip cache out of /tmp (to save Codespaces disk)
+ENV PIP_CACHE_DIR=/opt/airflow/.pip-cache
 
-# Install Python dependencies (core + dev)
-RUN python -m pip install --no-cache-dir -r requirements.txt \
- && python -m pip install --no-cache-dir -r requirements-dev.txt
+# Upgrade pip/setuptools first
+RUN python -m ensurepip --upgrade && pip install --upgrade pip setuptools wheel
 
-# Copy serving requirements (used when packaging models with MLflow)
+# Install Airflow with Postgres + GCP providers only (no ML libs)
+RUN pip install --no-cache-dir "apache-airflow[postgres,gcp]==2.8.1" \
+    --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.8.1/constraints-3.10.txt"
+
+# Copy serving requirements (used in other containers, not installed here)
 COPY requirements.serve.txt /opt/airflow/requirements.serve.txt
