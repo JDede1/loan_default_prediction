@@ -1,30 +1,40 @@
 FROM python:3.10-slim
 
-# Install bash (needed for troubleshooting and exec commands)
+# ------------------------------------------------------------------
+# System dependencies
+# ------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     procps \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/*
 
-# Create airflow user for consistent permissions with docker-compose mounts
+# ------------------------------------------------------------------
+# Create airflow user + dirs (match Airflow container conventions)
+# ------------------------------------------------------------------
 RUN useradd -ms /bin/bash airflow && \
-    mkdir -p /opt/airflow/logs && \
+    mkdir -p /opt/airflow/logs /opt/airflow/artifacts /opt/airflow/tmp && \
     chown -R airflow:airflow /opt/airflow
 
-# Set working directory to match Airflow's path structure
 WORKDIR /opt/airflow
 
-# Copy only the monitoring requirements first (leverage Docker build cache)
+# ------------------------------------------------------------------
+# Python dependencies
+# ------------------------------------------------------------------
 COPY requirements-monitoring.txt .
+RUN pip install --upgrade pip \
+ && pip install --no-cache-dir -r requirements-monitoring.txt
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements-monitoring.txt
-
-# Copy source code for monitoring (same path as Airflow containers)
+# ------------------------------------------------------------------
+# Copy monitoring source code
+# ------------------------------------------------------------------
 COPY src/ src/
 
-# Switch to airflow user
+# ------------------------------------------------------------------
+# Runtime user
+# ------------------------------------------------------------------
 USER airflow
 
-# Default command: run the monitoring script
+# ------------------------------------------------------------------
+# Default command
+# ------------------------------------------------------------------
 CMD ["python", "src/monitor_predictions.py"]

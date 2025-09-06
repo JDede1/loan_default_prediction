@@ -1,7 +1,9 @@
-# Dockerfile.airflow
+# Use official Airflow image (Python 3.10)
 FROM apache/airflow:2.8.1-python3.10
 
-# Switch to root to install system packages
+# ------------------------------------------------------------------
+# System dependencies
+# ------------------------------------------------------------------
 USER root
 
 # Install bash, compiler tools, DB drivers, git, and Google Cloud SDK (gcloud + gsutil)
@@ -20,17 +22,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     | gpg --dearmor > /usr/share/keyrings/cloud.google.gpg \
  && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
     > /etc/apt/sources.list.d/google-cloud-sdk.list \
- && apt-get update && apt-get install -y google-cloud-sdk \
+ && apt-get update && apt-get install -y --no-install-recommends google-cloud-sdk \
  && rm -rf /var/lib/apt/lists/*
 
-# Switch back to airflow user before installing Python dependencies
+# ------------------------------------------------------------------
+# Python dependencies
+# ------------------------------------------------------------------
 USER airflow
 WORKDIR /opt/airflow
 
-# Install Python dependencies
+# Copy requirements
 COPY requirements.txt requirements-dev.txt ./
+
+# Install Python dependencies (core + dev)
 RUN python -m pip install --no-cache-dir -r requirements.txt \
  && python -m pip install --no-cache-dir -r requirements-dev.txt
 
-# Make MLflow serving requirements file available (for training logs → model packaging)
+# Copy serving requirements (used when packaging models with MLflow)
 COPY requirements.serve.txt /opt/airflow/requirements.serve.txt

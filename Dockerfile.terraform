@@ -1,18 +1,24 @@
-# Dockerfile.terraform
 FROM hashicorp/terraform:1.9.5
 
-# Install dependencies + Google Cloud SDK (non-interactive, stable)
+# ------------------------------------------------------------------
+# Install dependencies + Google Cloud SDK
+# ------------------------------------------------------------------
 RUN apk add --no-cache bash curl python3 py3-pip libc6-compat git \
-    && echo "https://packages.cloud.google.com/apt cloud-sdk main" > /etc/apk/repositories \
     && curl -sSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-470.0.0-linux-x86_64.tar.gz \
     | tar -xz -C /usr/local \
     && ln -s /usr/local/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud
 
-# Set workdir for Terraform
+# ------------------------------------------------------------------
+# Working directory for Terraform
+# ------------------------------------------------------------------
 WORKDIR /workspace
 
+# ------------------------------------------------------------------
 # Do NOT override entrypoint — let docker-compose handle commands
+# ------------------------------------------------------------------
 ENTRYPOINT []
 
-# Default command is a shell (so you can run terraform or gcloud)
+# ------------------------------------------------------------------
+# Default command: shell (so you can run terraform or gcloud easily)
+# ------------------------------------------------------------------
 CMD ["/bin/bash"]

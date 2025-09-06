@@ -1,6 +1,7 @@
 .PHONY: install lint format test start stop start-serve stop-serve troubleshoot \
 	terraform-init terraform-plan terraform-apply terraform-destroy integration-tests \
-	fix-perms bootstrap
+	fix-perms bootstrap clean-disk clean-light stop-hard backup-airflow restore-airflow \
+	reset restart-webserver restart-serve
 
 # === Python/Dev Setup ===
 install:
@@ -23,6 +24,15 @@ start:
 
 stop:
 	cd airflow && ./stop_all.sh
+
+# Stop + deep clean (use when disk pressure is high)
+stop-hard: stop
+	-$(MAKE) backup-airflow
+	docker system prune -a -f --volumes
+	# Clear local logs/runs/caches
+	sudo rm -rf airflow/logs/* mlruns/* || true
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	df -h /
 
 # === Model Serving ===
 start-serve:
@@ -76,3 +86,61 @@ bootstrap:
 	$(MAKE) install
 	$(MAKE) fix-perms
 	$(MAKE) start
+
+# === Emergency disk cleanup (Codespaces / Docker) ===
+clean-disk:
+	# Remove unused Docker images, containers, volumes, networks, and build cache
+	docker system prune -a -f --volumes
+	# Clean up Airflow logs, MLflow runs, and Python caches
+	sudo rm -rf airflow/logs/* mlruns/* || true
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	# Show free disk space after cleanup
+	df -h /
+
+# === Light, routine cleanup (safe) ===
+clean-light:
+	docker container prune -f
+	docker image prune -f
+	# Keep volumes; just trim local logs and pyc caches
+	sudo rm -rf airflow/logs/* || true
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	df -h /
+
+# === Backup & Restore Airflow Variables/Connections ===
+backup-airflow:
+	# Export Airflow Variables and Connections to JSON files
+	docker compose -f airflow/docker-compose.yaml exec webserver \
+		airflow variables export /opt/airflow/variables.json || true
+	docker compose -f airflow/docker-compose.yaml exec webserver \
+		airflow connections export /opt/airflow/connections.json || true
+	# Copy them out of the container to the host
+	docker cp airflow-webserver:/opt/airflow/variables.json ./airflow/variables.json || true
+	docker cp airflow-webserver:/opt/airflow/connections.json ./airflow/connections.json || true
+	@echo "✅ Airflow Variables and Connections backed up to ./airflow/"
+
+restore-airflow:
+	# Copy JSON backups into the container
+	docker cp ./airflow/variables.json airflow-webserver:/opt/airflow/variables.json || true
+	docker cp ./airflow/connections.json airflow-webserver:/opt/airflow/connections.json || true
+	# Import them into Airflow
+	docker compose -f airflow/docker-compose.yaml exec webserver \
+		airflow variables import /opt/airflow/variables.json || true
+	docker compose -f airflow/docker-compose.yaml exec webserver \
+		airflow connections import /opt/airflow/connections.json || true
+	@echo "✅ Airflow Variables and Connections restored"
+
+# === New Convenience Targets ===
+reset:
+	docker compose -f airflow/docker-compose.yaml down -v
+	docker compose -f airflow/docker-compose.yaml build --no-cache
+	docker compose -f airflow/docker-compose.yaml up airflow-init
+	docker compose -f airflow/docker-compose.yaml up -d postgres mlflow scheduler webserver
+	@echo "✅ Reset complete. Airflow UI → http://localhost:8080 | MLflow UI → http://localhost:5000"
+
+restart-webserver:
+	docker compose -f airflow/docker-compose.yaml restart webserver
+	@echo "🔄 Webserver restarted. Check logs with: docker compose -f airflow/docker-compose.yaml logs -f webserver"
+
+restart-serve:
+	docker compose -f airflow/docker-compose.yaml restart serve
+	@echo "🔄 Serving container restarted. Health check: curl -s http://localhost:5001/ping"
