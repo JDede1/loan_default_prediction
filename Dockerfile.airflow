@@ -1,31 +1,54 @@
-# Use official Airflow image
 FROM apache/airflow:2.8.1-python3.10
 
-# ------------------------------------------------------------------
-# Minimal system deps
-# ------------------------------------------------------------------
+# ------------------------------------------------------
+# Install system dependencies + Google Cloud SDK
+# ------------------------------------------------------
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
-    libpq-dev \
+    curl \
+    jq \
     git \
+    libpq-dev \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+ && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg \
+ && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
+    > /etc/apt/sources.list.d/google-cloud-sdk.list \
+ && apt-get update && apt-get install -y google-cloud-sdk \
  && rm -rf /var/lib/apt/lists/*
 
-# ------------------------------------------------------------------
-# Python setup
-# ------------------------------------------------------------------
+# ------------------------------------------------------
+# Install Python dependencies with Airflow constraints
+# ------------------------------------------------------
 USER airflow
 WORKDIR /opt/airflow
 
-# Move pip cache out of /tmp (to save Codespaces disk)
-ENV PIP_CACHE_DIR=/opt/airflow/.pip-cache
+ARG AIRFLOW_VERSION=2.8.1
+ARG PYTHON_VERSION=3.10
+ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
 
-# Upgrade pip/setuptools first
-RUN python -m ensurepip --upgrade && pip install --upgrade pip setuptools wheel
+COPY --chown=airflow:root requirements.airflow.txt /opt/airflow/requirements.airflow.txt
+RUN pip install --no-cache-dir -r /opt/airflow/requirements.airflow.txt --constraint "${CONSTRAINT_URL}"
 
-# Install Airflow with Postgres + GCP providers only (no ML libs)
-RUN pip install --no-cache-dir "apache-airflow[postgres,gcp]==2.8.1" \
-    --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.8.1/constraints-3.10.txt"
+# ------------------------------------------------------
+# Ensure PATH prioritizes Airflow’s own binary
+# ------------------------------------------------------
+ENV PATH=/home/airflow/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# Copy serving requirements (used in other containers, not installed here)
-COPY requirements.serve.txt /opt/airflow/requirements.serve.txt
+# ------------------------------------------------------
+# Copy bootstrap script
+# ------------------------------------------------------
+USER root
+COPY airflow/create_airflow_user.sh /opt/airflow/create_airflow_user.sh
+RUN chmod +x /opt/airflow/create_airflow_user.sh
+
+# Fix mlruns ownership for MLflow
+RUN mkdir -p /opt/airflow/mlruns && chown -R airflow:root /opt/airflow/mlruns
+
+# ------------------------------------------------------
+# Final user & workdir
+# ------------------------------------------------------
+USER airflow
+WORKDIR /opt/airflow

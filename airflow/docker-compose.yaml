@@ -3,13 +3,42 @@ name: airflow
 volumes:
   postgres-db-volume:
   airflow-logs:
-  mlflow-runs:        # still used for backend store
+  mlflow-runs:          # backend store for MLflow
   airflow-artifacts:
-  airflow-tmp:        # ✅ new volume for tmp dir
+  airflow-tmp:
 
 networks:
   airflow:
     driver: bridge
+
+# ======================================================
+# Shared Airflow build configuration (reused by init/web/scheduler)
+# ======================================================
+x-airflow-common:
+  &airflow-common
+  image: loan-default-airflow:latest
+  build:
+    context: ..
+    dockerfile: Dockerfile.airflow
+  platform: linux/amd64
+  env_file:
+    - ../.env
+  user: "${AIRFLOW_UID:-1000}:${AIRFLOW_GID:-0}"
+  volumes:
+    - /workspaces/loan_default_prediction/airflow/dags:/opt/airflow/dags
+    - airflow-artifacts:/opt/airflow/artifacts
+    - mlflow-runs:/opt/airflow/mlruns
+    - airflow-logs:/opt/airflow/logs
+    - airflow-tmp:/opt/airflow/tmp
+    - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+  networks:
+    - airflow
+  environment:
+    # Ensure Airflow binary is resolved correctly
+    PATH: /home/airflow/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
 
 services:
   postgres:
@@ -21,7 +50,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airflow}
       POSTGRES_DB: ${POSTGRES_DB:-airflow}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airflow} -d ${POSTGRES_DB:-airflow}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airflow} -d ${POSTGRES_DB:-airflow}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -31,163 +60,69 @@ services:
       - airflow
 
   airflow-init:
-    build:
-      context: ..
-      dockerfile: Dockerfile.airflow
-    platform: linux/amd64
+    <<: *airflow-common
     container_name: airflow-init
-    # Run as root just for init so chown/chmod and airflow db init succeed
-    user: "0:0"
-    env_file:
-      - ../.env
-    environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
     entrypoint: /bin/bash
     command:
       - -c
       - |
         mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/logs /opt/airflow/tmp
-        chown -R airflow:root /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/logs /opt/airflow/tmp
-        chmod -R 775 /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/logs /opt/airflow/tmp
-        if jq -e '.client_email' /opt/airflow/keys/gcs-service-account.json >/dev/null 2>&1; then
-          gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
-        else
-          echo "⚠️ Skipping gcloud auth (dummy or invalid key detected)"
-        fi
-        airflow db init &&
-        bash /opt/airflow/create_airflow_user.sh || true
-    volumes:
-      - ../airflow/dags:/opt/airflow/dags
-      - ../airflow/create_airflow_user.sh:/opt/airflow/create_airflow_user.sh:ro
-      - ../src:/opt/airflow/src
-      - ../data:/opt/airflow/data
-      - ../tests:/opt/airflow/tests
-      - ../pytest.ini:/opt/airflow/pytest.ini:ro
-      - airflow-artifacts:/opt/airflow/artifacts
-      - mlflow-runs:/opt/airflow/mlruns
-      - airflow-logs:/opt/airflow/logs
-      - airflow-tmp:/opt/airflow/tmp
-      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - airflow
+        airflow db migrate
+        bash /opt/airflow/create_airflow_user.sh
     restart: "no"
 
   webserver:
-    build:
-      context: ..
-      dockerfile: Dockerfile.airflow
-    platform: linux/amd64
+    <<: *airflow-common
     container_name: airflow-webserver
-    user: "${AIRFLOW_UID:-1000}:${AIRFLOW_GID:-0}"
-    env_file:
-      - ../.env
-    environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
-      AIRFLOW__WEBSERVER__WORKERS: 1
-      AIRFLOW__WEBSERVER__WORKER_CLASS: sync
-      AIRFLOW__WEBSERVER__WORKER_TIMEOUT: 300
-      AIRFLOW__WEBSERVER__WORKER_REFRESH_INTERVAL: 0
+    ports:
+      - "8080:8080"
     entrypoint: /bin/bash
     command:
       - -c
       - |
         rm -f /opt/airflow/airflow-webserver.pid || true
-        mkdir -p /opt/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        chown -R airflow:root /opt/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        chmod -R 775 /opt/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        if jq -e '.client_email' /opt/airflow/keys/gcs-service-account.json >/dev/null 2>&1; then
-          gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
-        else
-          echo "⚠️ Skipping gcloud auth (dummy or invalid key detected)"
-        fi
         exec airflow webserver
-    ports:
-      - "8080:8080"
-    volumes:
-      - ../airflow/dags:/opt/airflow/dags
-      - ../src:/opt/airflow/src
-      - ../data:/opt/airflow/data
-      - ../tests:/opt/airflow/tests
-      - ../pytest.ini:/opt/airflow/pytest.ini:ro
-      - airflow-artifacts:/opt/airflow/artifacts
-      - mlflow-runs:/opt/airflow/mlruns
-      - airflow-logs:/opt/airflow/logs
-      - airflow-tmp:/opt/airflow/tmp
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      test: [ "CMD", "curl", "--fail", "http://localhost:8080/health" ]
       interval: 10s
       timeout: 10s
       retries: 30
       start_period: 60s
-    networks:
-      - airflow
     restart: always
 
   scheduler:
-    build:
-      context: ..
-      dockerfile: Dockerfile.airflow
-    platform: linux/amd64
+    <<: *airflow-common
     container_name: airflow-scheduler
-    user: "${AIRFLOW_UID:-1000}:${AIRFLOW_GID:-0}"
-    env_file:
-      - ../.env
-    environment:
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
     entrypoint: /bin/bash
     command:
       - -c
       - |
-        mkdir -p /opt/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        chown -R airflow:root /opt/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        chmod -R 775 /opt/airflow/logs /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/tmp
-        if jq -e '.client_email' /opt/airflow/keys/gcs-service-account.json >/dev/null 2>&1; then
-          gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json
-        else
-          echo "⚠️ Skipping gcloud auth (dummy or invalid key detected)"
-        fi
         exec airflow scheduler
-    volumes:
-      - ../airflow/dags:/opt/airflow/dags
-      - ../src:/opt/airflow/src
-      - ../data:/opt/airflow/data
-      - ../tests:/opt/airflow/tests
-      - ../pytest.ini:/opt/airflow/pytest.ini:ro
-      - airflow-artifacts:/opt/airflow/artifacts
-      - mlflow-runs:/opt/airflow/mlruns
-      - airflow-logs:/opt/airflow/logs
-      - airflow-tmp:/opt/airflow/tmp
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - airflow
     restart: always
 
   mlflow:
     image: ghcr.io/mlflow/mlflow:v3.1.4
     platform: linux/amd64
     container_name: mlflow
-    user: "${AIRFLOW_UID:-1000}:${AIRFLOW_GID:-0}"
+    user: "0:0"   # ✅ run as root to avoid volume permission issues
+    env_file:
+      - ../.env
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
     ports:
       - "5000:5000"
     volumes:
       - mlflow-runs:/opt/airflow/mlruns
+      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     command: >
-      mlflow server
-      --backend-store-uri file:/opt/airflow/mlruns
-      --default-artifact-root gs://loan-default-artifacts-loan-default-mlops/mlflow
-      --host 0.0.0.0 --port 5000
+      mlflow server --backend-store-uri file:/opt/airflow/mlruns
+        --default-artifact-root gs://loan-default-artifacts-loan-default-mlops/mlflow
+        --host 0.0.0.0 --port 5000
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "http://localhost:5000" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
     networks:
       - airflow
 
@@ -203,17 +138,32 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
       MODEL_NAME: loan_default_model
-      MODEL_ALIAS: staging   # change to production when promoting
+      MODEL_ALIAS: staging
       PORT: 5001
     volumes:
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     depends_on:
       - mlflow
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:5001/ping"]
+      test: [ "CMD", "curl", "--fail", "http://localhost:5001/ping" ]
       interval: 10s
       timeout: 10s
       retries: 5
+    networks:
+      - airflow
+
+  monitor:
+    build:
+      context: ..
+      dockerfile: Dockerfile.monitor
+    platform: linux/amd64
+    container_name: airflow-monitor
+    volumes:
+      - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
+      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
     networks:
       - airflow
 
@@ -229,6 +179,6 @@ services:
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     environment:
       GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
-    entrypoint: ["/bin/bash", "-c"]
+    entrypoint: [ "/bin/bash", "-c" ]
     networks:
       - airflow

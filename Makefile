@@ -1,7 +1,7 @@
-.PHONY: install lint format test start stop start-serve stop-serve troubleshoot \
+.PHONY: install lint format test start stop down start-core stop-core start-serve stop-serve troubleshoot \
 	terraform-init terraform-plan terraform-apply terraform-destroy integration-tests \
 	fix-perms bootstrap clean-disk clean-light stop-hard backup-airflow restore-airflow \
-	reset restart-webserver restart-serve
+	reset fresh-reset restart-webserver restart-serve reset-vars verify
 
 # === Python/Dev Setup ===
 install:
@@ -19,30 +19,99 @@ test:
 	pytest -v tests
 
 # === Airflow / MLflow Core ===
-start:
-	cd airflow && ./start_all.sh
+start: fix-perms
+	docker compose -f airflow/docker-compose.yaml up -d
+	@echo "🌐 Stack started: Airflow → http://localhost:8080 | MLflow → http://localhost:5000 | Serve → http://localhost:5001"
 
 stop:
-	cd airflow && ./stop_all.sh
+	docker compose -f airflow/docker-compose.yaml stop
+	@echo "🛑 All services stopped (containers paused, volumes/networks preserved)."
+
+down:
+	docker compose -f airflow/docker-compose.yaml down
+	@echo "🛑 All services stopped and removed (containers + networks)."
+
+# Start/stop only the main stack (postgres, webserver, scheduler, mlflow)
+start-core: fix-perms
+	docker compose -f airflow/docker-compose.yaml up -d postgres mlflow scheduler webserver
+	@echo "🌐 Airflow UI → http://localhost:8080 | MLflow UI → http://localhost:5000"
+
+stop-core:
+	docker compose -f airflow/docker-compose.yaml stop postgres mlflow scheduler webserver
+	@echo "🛑 Core services stopped."
 
 # Stop + deep clean (use when disk pressure is high)
-stop-hard: stop
+stop-hard: down
 	-$(MAKE) backup-airflow
 	docker system prune -a -f --volumes
-	# Clear local logs/runs/caches
 	sudo rm -rf airflow/logs/* mlruns/* || true
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	df -h /
 
 # === Model Serving ===
 start-serve:
-	cd airflow && ./start_serve.sh
+	docker compose -f airflow/docker-compose.yaml up -d serve
+	@echo "🌐 Serve API → http://localhost:5001"
 
 stop-serve:
-	cd airflow && ./stop_serve.sh
+	docker compose -f airflow/docker-compose.yaml stop serve
+	@echo "🛑 Model serving stopped."
 
+# === Troubleshooting (inline from troubleshoot.sh) ===
 troubleshoot:
-	cd airflow && ./troubleshoot.sh
+	@echo "🔍 Airflow, MLflow & Serving Troubleshooting Script"
+	@docker compose -f airflow/docker-compose.yaml ps
+	@ls -ld airflow/logs airflow/artifacts mlruns artifacts 2>/dev/null || true
+	@if [ ! -w airflow/logs ] || [ ! -d airflow/logs/dag_processor_manager ]; then \
+		echo "🛠 Host logs dir not writable or missing subfolder — running make fix-perms..."; \
+		$(MAKE) fix-perms || true; \
+	fi
+	@for service in $$(docker compose -f airflow/docker-compose.yaml config --services); do \
+		status=$$(docker inspect --format='{{.State.Status}}' \
+			$$(docker compose -f airflow/docker-compose.yaml ps -q $$service) 2>/dev/null || echo "not_found"); \
+		health=$$(docker inspect --format='{{.State.Health.Status}}' \
+			$$(docker compose -f airflow/docker-compose.yaml ps -q $$service) 2>/dev/null || echo "none"); \
+		echo "➡️  Service: $$service | Status: $$status | Health: $$health"; \
+		if [ "$$status" != "running" ] || [ "$$health" = "unhealthy" ]; then \
+			echo "⚠️  Service $$service is not healthy — showing last 20 logs..."; \
+			docker compose -f airflow/docker-compose.yaml logs --tail=20 $$service || true; \
+		fi; \
+	done
+	@if ! docker compose -f airflow/docker-compose.yaml exec webserver airflow db check >/dev/null 2>&1; then \
+		echo "⚙️ Airflow DB not initialized — running airflow-init..."; \
+		docker compose -f airflow/docker-compose.yaml run --rm airflow-init; \
+	else \
+		echo "✅ Airflow DB is already initialized."; \
+	fi
+	@echo "🔹 STEP 5: Verifying Airflow Webserver health..."
+	@for i in $$(seq 1 30); do \
+		if curl --silent http://localhost:8080/health | grep -q '"status":"healthy"'; then \
+			echo "✅ Airflow Webserver is healthy!"; break; \
+		fi; \
+		echo "   Waiting... ($$i/30)"; sleep 5; \
+	done
+	@echo "🔹 STEP 6: Verifying MLflow health..."
+	@if curl --silent http://localhost:5000 >/dev/null; then \
+		echo "✅ MLflow UI is reachable!"; \
+	else \
+		echo "❌ MLflow UI not responding at http://localhost:5000"; \
+	fi
+	@echo "🔹 STEP 7: Verifying Serve API health..."
+	@if curl --silent -X POST http://localhost:5001/invocations \
+		-H "Content-Type: application/json" \
+		-d '{"dataframe_split": {"columns": [], "data": []}}' | grep -q 'error_code'; then \
+		echo "✅ Serve API is responding!"; \
+	else \
+		echo "❌ Serve API not responding at http://localhost:5001/invocations"; \
+	fi
+	@echo "🔹 STEP 8: Listing critical Airflow Variables..."
+	@for var in MODEL_ALIAS PREDICTION_INPUT_PATH PREDICTION_OUTPUT_PATH STORAGE_BACKEND GCS_BUCKET LATEST_PREDICTION_PATH \
+		MODEL_NAME PROMOTE_FROM_ALIAS PROMOTE_TO_ALIAS PROMOTION_AUC_THRESHOLD PROMOTION_F1_THRESHOLD \
+		PROMOTION_TRIGGER_SOURCE PROMOTION_TRIGGERED_BY SLACK_WEBHOOK_URL ALERT_EMAILS; do \
+		value=$$(docker compose -f airflow/docker-compose.yaml exec webserver airflow variables get $$var 2>/dev/null || echo "(not set)"); \
+		echo "   • $$var = $$value"; \
+	done
+	@docker compose -f airflow/docker-compose.yaml ps
 
 # === Terraform (GCP Infrastructure) ===
 terraform-init:
@@ -57,7 +126,7 @@ terraform-apply:
 terraform-destroy:
 	docker compose -f airflow/docker-compose.yaml run --rm terraform "terraform destroy -auto-approve"
 
-# === Integration Tests (run inside webserver container, ensure serve is up) ===
+# === Integration Tests ===
 integration-tests:
 	docker compose -f airflow/docker-compose.yaml up -d serve
 	docker compose -f airflow/docker-compose.yaml run --rm \
@@ -70,18 +139,19 @@ integration-tests:
 		webserver pytest tests -m integration -v
 	docker compose -f airflow/docker-compose.yaml down --remove-orphans
 
-# === Permissions (prevent artifact/log write failures) ===
+# === Permissions ===
 fix-perms:
 	# Ensure local dirs exist for bind mounts
 	mkdir -p artifacts airflow/artifacts airflow/tmp mlruns airflow/logs
-	# Codespaces has sudo; this fixes container write perms to mounted volumes
+	# Fix permissions for both Airflow + MLflow
 	sudo chmod -R 777 artifacts airflow/artifacts airflow/tmp mlruns airflow/logs
 	# Pre-create subfolder expected by Airflow
 	mkdir -p airflow/logs/dag_processor_manager
+	# Ensure bootstrap script is executable
+	chmod +x airflow/create_airflow_user.sh || true
 
 # === One-shot setup for fresh envs (optional) ===
 bootstrap:
-	# Don't overwrite an existing .env; create from example if missing
 	[ -f .env ] || cp -n .env.example .env || true
 	$(MAKE) install
 	$(MAKE) fix-perms
@@ -89,53 +159,53 @@ bootstrap:
 
 # === Emergency disk cleanup (Codespaces / Docker) ===
 clean-disk:
-	# Remove unused Docker images, containers, volumes, networks, and build cache
 	docker system prune -a -f --volumes
-	# Clean up Airflow logs, MLflow runs, and Python caches
 	sudo rm -rf airflow/logs/* mlruns/* || true
 	find . -type d -name "__pycache__" -exec rm -rf {} +
-	# Show free disk space after cleanup
 	df -h /
 
 # === Light, routine cleanup (safe) ===
 clean-light:
 	docker container prune -f
 	docker image prune -f
-	# Keep volumes; just trim local logs and pyc caches
 	sudo rm -rf airflow/logs/* || true
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	df -h /
 
 # === Backup & Restore Airflow Variables/Connections ===
 backup-airflow:
-	# Export Airflow Variables and Connections to JSON files
 	docker compose -f airflow/docker-compose.yaml exec webserver \
 		airflow variables export /opt/airflow/variables.json || true
 	docker compose -f airflow/docker-compose.yaml exec webserver \
 		airflow connections export /opt/airflow/connections.json || true
-	# Copy them out of the container to the host
 	docker cp airflow-webserver:/opt/airflow/variables.json ./airflow/variables.json || true
 	docker cp airflow-webserver:/opt/airflow/connections.json ./airflow/connections.json || true
 	@echo "✅ Airflow Variables and Connections backed up to ./airflow/"
 
 restore-airflow:
-	# Copy JSON backups into the container
 	docker cp ./airflow/variables.json airflow-webserver:/opt/airflow/variables.json || true
 	docker cp ./airflow/connections.json airflow-webserver:/opt/airflow/connections.json || true
-	# Import them into Airflow
 	docker compose -f airflow/docker-compose.yaml exec webserver \
 		airflow variables import /opt/airflow/variables.json || true
 	docker compose -f airflow/docker-compose.yaml exec webserver \
 		airflow connections import /opt/airflow/connections.json || true
 	@echo "✅ Airflow Variables and Connections restored"
 
-# === New Convenience Targets ===
-reset:
+# === Reset (cached by default) ===
+reset: fix-perms
+	docker compose -f airflow/docker-compose.yaml down -v
+	docker compose -f airflow/docker-compose.yaml build
+	docker compose -f airflow/docker-compose.yaml run --rm airflow-init
+	docker compose -f airflow/docker-compose.yaml up -d postgres mlflow scheduler webserver
+	@echo "✅ Reset complete (cached). Airflow UI → http://localhost:8080 | MLflow UI → http://localhost:5000"
+
+# === Fresh Reset (force no-cache rebuild) ===
+fresh-reset: fix-perms
 	docker compose -f airflow/docker-compose.yaml down -v
 	docker compose -f airflow/docker-compose.yaml build --no-cache
-	docker compose -f airflow/docker-compose.yaml up airflow-init
+	docker compose -f airflow/docker-compose.yaml run --rm airflow-init
 	docker compose -f airflow/docker-compose.yaml up -d postgres mlflow scheduler webserver
-	@echo "✅ Reset complete. Airflow UI → http://localhost:8080 | MLflow UI → http://localhost:5000"
+	@echo "✅ Fresh reset complete (no cache). Airflow UI → http://localhost:8080 | MLflow UI → http://localhost:5000"
 
 restart-webserver:
 	docker compose -f airflow/docker-compose.yaml restart webserver
@@ -144,3 +214,30 @@ restart-webserver:
 restart-serve:
 	docker compose -f airflow/docker-compose.yaml restart serve
 	@echo "🔄 Serving container restarted. Health check: curl -s http://localhost:5001/ping"
+
+# === Reset Airflow Variables (for stop_all.sh --reset-vars) ===
+reset-vars:
+	@echo "🗑 Clearing Phase 2 & Phase 3 Airflow Variables..."
+	@for var in MODEL_ALIAS PREDICTION_INPUT_PATH PREDICTION_OUTPUT_PATH STORAGE_BACKEND GCS_BUCKET LATEST_PREDICTION_PATH \
+		MODEL_NAME PROMOTE_FROM_ALIAS PROMOTE_TO_ALIAS PROMOTION_AUC_THRESHOLD PROMOTION_F1_THRESHOLD \
+		PROMOTION_TRIGGER_SOURCE PROMOTION_TRIGGERED_BY SLACK_WEBHOOK_URL ALERT_EMAILS; do \
+		echo "   • Removing Airflow Variable: $$var"; \
+		docker compose -f airflow/docker-compose.yaml run --rm webserver airflow variables delete $$var || true; \
+	done
+	@echo "✅ Airflow Variables cleared."
+
+# === Verify Airflow & MLflow health ===
+verify:
+	@echo "🔎 Checking Airflow version..."
+	-@docker exec -it airflow-webserver airflow version || echo "❌ Airflow not responding"
+
+	@echo "\n📂 Listing DAGs inside Airflow container..."
+	-@docker exec -it airflow-webserver ls -l /opt/airflow/dags || echo "❌ DAGs not mounted"
+
+	@echo "\n🌐 Checking Airflow webserver health..."
+	-@curl -s http://localhost:8080/health || echo "❌ Airflow UI not reachable"
+
+	@echo "\n📡 Checking MLflow logs (last 20 lines)..."
+	-@docker compose -f airflow/docker-compose.yaml logs --tail=20 mlflow || echo "❌ MLflow not starting"
+
+	@echo "\n✅ Verification complete"

@@ -1,22 +1,18 @@
-# === Core ML libs ===
-numpy==1.24.4
-pandas==1.5.3
-scikit-learn==1.2.2
+# === Core ML libs (Airflow constraints handle versions) ===
+numpy
+pandas
+scikit-learn
+matplotlib
+joblib
+
+# === Specific ML libraries ===
 xgboost==1.7.6
-matplotlib==3.6.3
-joblib==1.4.2
 
 # === MLflow ===
 mlflow==3.1.4
 
-# === Web / API helpers ===
-Flask==2.2.5
-gunicorn==21.2.0
-uvicorn==0.29.0
-fastapi==0.110.0
-
 # === Utilities ===
-python-dotenv==1.0.1
+python-dotenv        # let Airflow constraints choose (currently 1.0.0)
 requests==2.31.0
 pyyaml==6.0.1
 psycopg2-binary==2.9.9
@@ -25,5 +21,5 @@ psycopg2-binary==2.9.9
 evidently>=0.4.0
 
 # === Phase 2 Additions: Google Cloud integration ===
-google-cloud-storage==2.15.0
-gcsfs==2024.3.1
+google-cloud-storage  # let constraints decide (currently 2.14.0)
+gcsfs                 # let constraints decide (currently 2023.12.2.post1)
