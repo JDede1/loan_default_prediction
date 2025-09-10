@@ -1,42 +1,67 @@
-# Python cache
+# ==============================
+# Python cache & temp
+# ==============================
 __pycache__/
 *.py[cod]
 *.swp
 
-# OS/editor
+# ==============================
+# OS / editor cruft
+# ==============================
 .DS_Store
 .vscode/
 .idea/
 
+# ==============================
 # Virtualenvs
+# ==============================
 .venv/
 .m*/              # hidden venvs like .mlflow-venv*
 
+# ==============================
 # Git
+# ==============================
 .git/
 .gitignore
 
+# ==============================
 # Logs, temp, artifacts (don’t bloat image)
+# ==============================
 airflow/logs/
 airflow/tmp/
 mlruns/
 artifacts/
 data/
 
+# ==============================
 # Notebooks & archive
+# ==============================
 *.ipynb
 archive/
 
-# Tests (only needed locally)
-tests/
-
-# Shell scripts (exclude by default, selectively include)
+# ==============================
+# Shell scripts (exclude by default, whitelist needed)
+# ==============================
 *.sh
 *.ps1
+!entrypoint.sh
+!airflow/*.sh         # keep airflow helper scripts
 
+# ==============================
+# Tests (keep for CI/CD or container runs)
+# ==============================
+!tests/**
+
+# ==============================
 # Explicit includes for builds
+# ==============================
 !src/**
 !airflow/**
 !Dockerfile*
 !requirements*.txt
-!entrypoint.sh
+
+# ==============================
+# Data (exclude heavy, allow small samples)
+# ==============================
+!data/sample_input.json
+!data/batch_input.csv

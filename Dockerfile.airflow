@@ -1,3 +1,5 @@
+# Dockerfile.airflow
+
 FROM apache/airflow:2.8.1-python3.10
 
 # ------------------------------------------------------
@@ -20,35 +22,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------
-# Install Python dependencies with Airflow constraints
+# Install ONLY extra Python dependencies (as airflow user)
 # ------------------------------------------------------
 USER airflow
 WORKDIR /opt/airflow
 
+# Airflow version & constraint URL
 ARG AIRFLOW_VERSION=2.8.1
 ARG PYTHON_VERSION=3.10
 ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
 
-# Copy requirements
+# Copy requirements file
 COPY --chown=airflow:root requirements.airflow.txt /opt/airflow/requirements.airflow.txt
 
-# Install requirements safely with constraints (prevents Airflow removal)
-RUN pip install --no-cache-dir -r /opt/airflow/requirements.airflow.txt --constraint "${CONSTRAINT_URL}"
+# Install extras into ~/.local (safe for Airflow)
+RUN pip install --no-cache-dir --user -r /opt/airflow/requirements.airflow.txt \
+    --constraint "${CONSTRAINT_URL}"
 
-# ------------------------------------------------------
-# Ensure PATH prioritizes Airflow’s own binary
-# ------------------------------------------------------
-ENV PATH=/home/airflow/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
+# Ensure local bin comes first so airflow finds extras
+ENV PATH=/home/airflow/.local/bin:$PATH
 
 # ------------------------------------------------------
 # Copy bootstrap script
 # ------------------------------------------------------
 USER root
 COPY airflow/create_airflow_user.sh /opt/airflow/create_airflow_user.sh
-RUN chmod +x /opt/airflow/create_airflow_user.sh
-
-# Fix mlruns ownership for MLflow
-RUN mkdir -p /opt/airflow/mlruns && chown -R airflow:root /opt/airflow/mlruns
+RUN chmod +x /opt/airflow/create_airflow_user.sh \
+ && mkdir -p /opt/airflow/mlruns \
+ && chown -R airflow:root /opt/airflow
 
 # ------------------------------------------------------
 # Final user & workdir

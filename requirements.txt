@@ -1,3 +1,5 @@
+# Requirements.txt
+
 # === Core ML libs (Airflow constraints handle versions) ===
 numpy
 pandas

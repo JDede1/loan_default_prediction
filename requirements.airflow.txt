@@ -1,7 +1,15 @@
 # requirements.airflow.txt
+# Airflow extras - keep minimal, let constraints handle versions
+
+# MLflow for experiment tracking + registry
 mlflow==3.1.4
-requests==2.31.0
-google-cloud-storage==2.14.0       # match Airflow 2.8.1 constraints
-gcsfs==2023.12.2.post1             # match Airflow 2.8.1 constraints
-python-dotenv==1.0.0               # match Airflow 2.8.1 constraints
-pyyaml==6.0.1                      # match Airflow 2.8.1 constraints
+
+# Utilities
+python-dotenv
+pyyaml
+requests   # unpinned - Airflow constraints will pick a safe version
+
+# Google Cloud support
+google-cloud-storage
+gcsfs
+
