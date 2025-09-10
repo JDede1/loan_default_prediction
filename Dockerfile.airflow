@@ -29,7 +29,10 @@ ARG AIRFLOW_VERSION=2.8.1
 ARG PYTHON_VERSION=3.10
 ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
 
+# Copy requirements
 COPY --chown=airflow:root requirements.airflow.txt /opt/airflow/requirements.airflow.txt
+
+# Install requirements safely with constraints (prevents Airflow removal)
 RUN pip install --no-cache-dir -r /opt/airflow/requirements.airflow.txt --constraint "${CONSTRAINT_URL}"
 
 # ------------------------------------------------------
