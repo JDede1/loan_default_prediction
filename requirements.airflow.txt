@@ -1,15 +1,14 @@
 # requirements.airflow.txt
-# Airflow extras - keep minimal, let constraints handle versions
+# === Airflow-specific extras for DAG tasks ===
 
-# MLflow for experiment tracking + registry
+# MLflow client (logging, model registry integration)
 mlflow==3.1.4
 
-# Utilities
-python-dotenv
-pyyaml
-requests   # unpinned - Airflow constraints will pick a safe version
-
-# Google Cloud support
+# Google Cloud Storage support (used in your scripts & monitoring)
 google-cloud-storage
 gcsfs
 
+# Config & utility helpers
+python-dotenv
+pyyaml
+requests

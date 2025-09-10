@@ -64,7 +64,7 @@ services:
       - -c
       - |
         mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/logs /opt/airflow/tmp
-        airflow db migrate
+        /home/airflow/.local/bin/airflow db migrate
         bash /opt/airflow/create_airflow_user.sh
     restart: "no"
 
@@ -78,7 +78,7 @@ services:
       - -c
       - |
         rm -f /opt/airflow/airflow-webserver.pid || true
-        exec airflow webserver
+        exec /home/airflow/.local/bin/airflow webserver
     healthcheck:
       test: [ "CMD", "curl", "--fail", "http://localhost:8080/health" ]
       interval: 10s
@@ -94,7 +94,7 @@ services:
     command:
       - -c
       - |
-        exec airflow scheduler
+        exec /home/airflow/.local/bin/airflow scheduler
     healthcheck:
       test: [ "CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $(hostname) || exit 1" ]
       interval: 30s

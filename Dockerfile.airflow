@@ -1,58 +1,31 @@
-# Dockerfile.airflow
-
 FROM apache/airflow:2.8.1-python3.10
 
 # ------------------------------------------------------
-# Install system dependencies + Google Cloud SDK
+# Install system dependencies (as root)
 # ------------------------------------------------------
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash \
-    curl \
-    jq \
-    git \
-    libpq-dev \
-    apt-transport-https \
-    ca-certificates \
-    gnupg \
- && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg \
+    bash build-essential default-libmysqlclient-dev libpq-dev git curl \
+    apt-transport-https ca-certificates gnupg \
+ && mkdir -p /usr/share/keyrings \
+ && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+    | gpg --dearmor > /usr/share/keyrings/cloud.google.gpg \
  && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
     > /etc/apt/sources.list.d/google-cloud-sdk.list \
  && apt-get update && apt-get install -y google-cloud-sdk \
  && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------
-# Install ONLY extra Python dependencies (as airflow user)
+# Install Python dependencies (as airflow user)
 # ------------------------------------------------------
 USER airflow
 WORKDIR /opt/airflow
 
-# Airflow version & constraint URL
-ARG AIRFLOW_VERSION=2.8.1
-ARG PYTHON_VERSION=3.10
-ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
-
-# Copy requirements file
 COPY --chown=airflow:root requirements.airflow.txt /opt/airflow/requirements.airflow.txt
-
-# Install extras into ~/.local (safe for Airflow)
-RUN pip install --no-cache-dir --user -r /opt/airflow/requirements.airflow.txt \
-    --constraint "${CONSTRAINT_URL}"
-
-# Ensure local bin comes first so airflow finds extras
-ENV PATH=/home/airflow/.local/bin:$PATH
+RUN pip install --no-cache-dir -r /opt/airflow/requirements.airflow.txt
 
 # ------------------------------------------------------
-# Copy bootstrap script
-# ------------------------------------------------------
-USER root
-COPY airflow/create_airflow_user.sh /opt/airflow/create_airflow_user.sh
-RUN chmod +x /opt/airflow/create_airflow_user.sh \
- && mkdir -p /opt/airflow/mlruns \
- && chown -R airflow:root /opt/airflow
-
-# ------------------------------------------------------
-# Final user & workdir
+# Final setup
 # ------------------------------------------------------
 USER airflow
 WORKDIR /opt/airflow
