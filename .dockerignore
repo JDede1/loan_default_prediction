@@ -1,53 +1,42 @@
-# System + virtualenv
+# Python cache
 __pycache__/
 *.py[cod]
 *.swp
-.DS_Store
-.env
-.m*/   # hides .mlflow-venv and .mlflow-venv310
 
-# Editors
+# OS/editor
+.DS_Store
 .vscode/
 .idea/
 
-# Notebooks & archive
-*.ipynb
-archive/
-
-# Logs, images, outputs
-*.log
-*.png
-*.csv
-*.json
-
-# Shell scripts
-*.sh
-*.ps1
+# Virtualenvs
+.venv/
+.m*/              # hidden venvs like .mlflow-venv*
 
 # Git
 .git/
 .gitignore
 
-# Ignore all by default, allow what’s needed
+# Logs, temp, artifacts (don’t bloat image)
+airflow/logs/
+airflow/tmp/
 mlruns/
-!mlruns/**/meta.yaml
-!mlruns/**/MLmodel
-
-model/
-!model/model.xgb
-!model/MLmodel
-!model/requirements.txt
-
 artifacts/
-!artifacts/*.png
-!artifacts/*.json
+data/
 
-# Explicit includes
-!src/
-!airflow/
-!Dockerfile
-!Dockerfile.*
-!requirements.txt
-!requirements-monitoring.txt
-!requirements.serve.txt
+# Notebooks & archive
+*.ipynb
+archive/
+
+# Tests (only needed locally)
+tests/
+
+# Shell scripts (exclude by default, selectively include)
+*.sh
+*.ps1
+
+# Explicit includes for builds
+!src/**
+!airflow/**
+!Dockerfile*
+!requirements*.txt
 !entrypoint.sh
