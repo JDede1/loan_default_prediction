@@ -1,7 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta 
 from airflow import DAG
-from airflow.operators.bash import BashOperator
-from airflow.operators.python import BranchPythonOperator
+from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.trigger_rule import TriggerRule
@@ -11,6 +10,7 @@ from mlflow.tracking import MlflowClient
 import os
 import requests
 from airflow.utils.email import send_email
+from google.cloud import aiplatform  # 👈 new import
 
 # -----------------------
 # Defaults
@@ -40,7 +40,6 @@ SLACK_WEBHOOK_URL = Variable.get(
 )
 ALERT_EMAILS = Variable.get("ALERT_EMAILS", default_var=os.getenv("ALERT_EMAILS", ""))
 
-# Extra context for promotion audit tags
 TRIGGER_SOURCE = Variable.get(
     "PROMOTION_TRIGGER_SOURCE", default_var="train_pipeline_dag"
 )
@@ -48,13 +47,11 @@ TRIGGERED_BY = Variable.get(
     "PROMOTION_TRIGGERED_BY", default_var="automated_weekly_job"
 )
 
-# ✅ Force MLflow to use server
 MLFLOW_TRACKING_URI = Variable.get(
     "MLFLOW_TRACKING_URI",
     default_var=os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"),
 )
 
-# ✅ Unified training data path
 TRAIN_DATA_PATH = Variable.get(
     "TRAIN_DATA_PATH",
     default_var=os.getenv(
@@ -62,7 +59,6 @@ TRAIN_DATA_PATH = Variable.get(
     ),
 )
 
-# ✅ Best params path aligned with tuning script
 BEST_PARAMS_PATH = Variable.get(
     "BEST_PARAMS_PATH",
     default_var=os.getenv(
@@ -72,7 +68,6 @@ BEST_PARAMS_PATH = Variable.get(
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 client = MlflowClient()
-
 
 # -----------------------
 # Notifications
@@ -84,7 +79,6 @@ def notify_slack(message: str):
         except Exception as e:
             print(f"⚠️ Slack notification failed: {e}")
 
-
 def notify_email(subject: str, html_content: str):
     if ALERT_EMAILS:
         try:
@@ -94,6 +88,37 @@ def notify_email(subject: str, html_content: str):
         except Exception as e:
             print(f"⚠️ Email notification failed: {e}")
 
+# -----------------------
+# Vertex AI Training
+# -----------------------
+def submit_vertex_job(**kwargs):
+    project = os.getenv("PROJECT_ID", "loan-default-mlops")
+    region = os.getenv("REGION", "us-central1")
+    image_uri = os.getenv("TRAINER_IMAGE_URI")  # from .env or Airflow Variable
+    staging_bucket = f"gs://{os.getenv('GCS_BUCKET', 'loan-default-artifacts-loan-default-mlops')}"
+
+    # Initialize Vertex AI with staging bucket
+    aiplatform.init(project=project, location=region, staging_bucket=staging_bucket)
+
+    job = aiplatform.CustomJob(
+        display_name="loan-default-training",
+        worker_pool_specs=[{
+            "machine_spec": {"machine_type": "n1-standard-4"},
+            "replica_count": 1,
+            "container_spec": {
+                "image_uri": image_uri,
+                "command": ["python", "src/train_with_mlflow.py"],
+                "args": [
+                    "--data_path", TRAIN_DATA_PATH,
+                    "--params_path", BEST_PARAMS_PATH,
+                    "--model_name", MODEL_NAME,
+                    "--alias", FROM_ALIAS,
+                ],
+            },
+        }],
+    )
+
+    job.run(sync=True)
 
 # -----------------------
 # Branch: decide whether to promote
@@ -138,7 +163,6 @@ def decide_promotion(ti):
         notify_email("❌ Model Promotion Skipped", msg)
         return "skip_promotion"
 
-
 # -----------------------
 # DAG Definition
 # -----------------------
@@ -146,36 +170,16 @@ with DAG(
     dag_id="train_model_with_mlflow",
     default_args=default_args,
     start_date=datetime(2025, 8, 1),
-    schedule_interval="@weekly",  # Weekly retraining
+    schedule_interval="@weekly",
     catchup=False,
     max_active_runs=1,
     tags=["mlflow", "training", "promotion"],
 ) as dag:
 
-    # 1️⃣ Train model
-    train_model = BashOperator(
+    # 1️⃣ Train model on Vertex AI
+    train_model = PythonOperator(
         task_id="train_model",
-        bash_command=(
-            "python /opt/airflow/src/train_with_mlflow.py "
-            f'--data_path "{TRAIN_DATA_PATH}" '
-            f"--params_path {BEST_PARAMS_PATH} "
-            f"--model_name {MODEL_NAME} "
-            f"--alias {FROM_ALIAS}"
-        ),
-        cwd="/opt/airflow",
-        env={
-            # ✅ Ensure training script sees critical env vars
-            "GOOGLE_APPLICATION_CREDENTIALS": os.getenv(
-                "GOOGLE_APPLICATION_CREDENTIALS",
-                "/opt/airflow/keys/gcs-service-account.json",
-            ),
-            "MLFLOW_TRACKING_URI": MLFLOW_TRACKING_URI,
-            "MLFLOW_ARTIFACT_URI": os.getenv(
-                "MLFLOW_ARTIFACT_URI", f"gs://{os.getenv('GCS_BUCKET', '')}/mlflow"
-            ),
-            "GCS_BUCKET": os.getenv("GCS_BUCKET", ""),
-            "TRAIN_DATA_PATH": TRAIN_DATA_PATH,
-        },
+        python_callable=submit_vertex_job,
     )
 
     # 2️⃣ Decide promotion

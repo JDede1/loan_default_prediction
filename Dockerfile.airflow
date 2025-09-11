@@ -1,31 +1,35 @@
-FROM apache/airflow:2.8.1-python3.10
+# ============================
+# Dockerfile.airflow (final)
+# ============================
+# Base: official Apache Airflow image (includes Airflow + entrypoints)
+FROM apache/airflow:2.9.3-python3.11
 
-# ------------------------------------------------------
-# Install system dependencies (as root)
-# ------------------------------------------------------
+# Build args for Airflow dependency constraints
+ARG AIRFLOW_VERSION=2.9.3
+ARG PYTHON_VERSION=3.11
+ARG CONSTRAINT_URL="https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt"
+
+# Switch to root for system packages
 USER root
+
+# Install minimal system deps needed for ML/GCS libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash build-essential default-libmysqlclient-dev libpq-dev git curl \
-    apt-transport-https ca-certificates gnupg \
- && mkdir -p /usr/share/keyrings \
- && curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg \
-    | gpg --dearmor > /usr/share/keyrings/cloud.google.gpg \
- && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] http://packages.cloud.google.com/apt cloud-sdk main" \
-    > /etc/apt/sources.list.d/google-cloud-sdk.list \
- && apt-get update && apt-get install -y google-cloud-sdk \
- && rm -rf /var/lib/apt/lists/*
+        build-essential \
+        gcc \
+        git \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# ------------------------------------------------------
-# Install Python dependencies (as airflow user)
-# ------------------------------------------------------
+# Switch back to airflow user
 USER airflow
-WORKDIR /opt/airflow
 
-COPY --chown=airflow:root requirements.airflow.txt /opt/airflow/requirements.airflow.txt
-RUN pip install --no-cache-dir -r /opt/airflow/requirements.airflow.txt
+# Copy requirement files
+COPY requirements.txt /tmp/requirements.txt
+COPY requirements.airflow.txt /tmp/requirements.airflow.txt
 
-# ------------------------------------------------------
-# Final setup
-# ------------------------------------------------------
-USER airflow
-WORKDIR /opt/airflow
+# Install project (ML pipeline) + Airflow-specific Python deps with constraints
+RUN pip install --no-cache-dir -r /tmp/requirements.txt --constraint "${CONSTRAINT_URL}" \
+    && pip install --no-cache-dir -r /tmp/requirements.airflow.txt --constraint "${CONSTRAINT_URL}"
+
+# Ensure project code inside /opt/airflow is importable
+ENV PYTHONPATH=/opt/airflow:/opt/airflow/src

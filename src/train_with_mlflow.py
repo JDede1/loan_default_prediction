@@ -180,12 +180,13 @@ def log_and_register_model(
         mlflow.log_metrics(metrics)
         mlflow.log_params(params)
 
-        # Log model
+        # Log + Register model in one step
         input_example = X_test.iloc[:1]
         signature = infer_signature(X_test, model.predict(X_test))
         mlflow.xgboost.log_model(
             model,
             artifact_path="model",
+            registered_model_name=model_name,  # ✅ direct registry logging
             signature=signature,
             input_example=input_example,
             pip_requirements=os.path.join(BASE_DIR, "requirements.serve.txt"),
@@ -225,20 +226,15 @@ def log_and_register_model(
         except PermissionError:
             print(f"⚠️ Skipped logging from {ARTIFACT_DIR} due to permissions.")
 
-        # Register model
-        model_uri = f"runs:/{run_id}/model"
-        print(f"Registering model from: {model_uri}")
-        model_details = mlflow.register_model(model_uri=model_uri, name=model_name)
-
+        # ✅ Assign alias after registration
         if alias:
+            latest_version = client.get_latest_versions(model_name, stages=[])[0].version
             client.set_registered_model_alias(
                 name=model_name,
                 alias=alias.lower(),
-                version=model_details.version,
+                version=latest_version,
             )
-            print(f"Assigned alias '{alias}' to version {model_details.version}")
-
-        print(f"Registered model '{model_name}' as version {model_details.version}")
+            print(f"Assigned alias '{alias}' to version {latest_version}")
 
 
 # -----------------------

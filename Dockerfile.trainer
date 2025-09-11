@@ -1,0 +1,29 @@
+# ============================
+# Dockerfile.trainer (for Vertex AI)
+# ============================
+
+# Use lightweight Python base
+FROM python:3.11-slim
+
+# Install system deps for ML libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    git \
+    curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy base requirements
+COPY requirements.txt /app/requirements.txt
+
+# Install ML dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy training code
+COPY src/ /app/src/
+
+# Default command (can be overridden by Vertex AI job)
+ENTRYPOINT ["python", "src/train_with_mlflow.py"]

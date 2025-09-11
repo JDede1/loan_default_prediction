@@ -3,7 +3,7 @@ name: airflow
 volumes:
   postgres-db-volume:
   airflow-logs:
-  mlflow-runs:          # backend store for MLflow
+  mlflow-runs:
   airflow-artifacts:
   airflow-tmp:
 
@@ -11,177 +11,143 @@ networks:
   airflow:
     driver: bridge
 
-# ======================================================
-# Shared Airflow build configuration (reused by init/web/scheduler)
-# ======================================================
-x-airflow-common:
-  &airflow-common
-  image: loan-default-airflow:latest
-  build:
-    context: ..
-    dockerfile: Dockerfile.airflow
-  platform: linux/amd64
-  env_file:
-    - ../.env
-  user: "${AIRFLOW_UID:-1000}:${AIRFLOW_GID:-0}"
-  volumes:
-    - /workspaces/loan_default_prediction/airflow/dags:/opt/airflow/dags
-    - airflow-artifacts:/opt/airflow/artifacts
-    - mlflow-runs:/opt/airflow/mlruns
-    - airflow-logs:/opt/airflow/logs
-    - airflow-tmp:/opt/airflow/tmp
-    - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
-  depends_on:
-    postgres:
-      condition: service_healthy
-  networks:
-    - airflow
-
 services:
   postgres:
     image: postgres:13
-    platform: linux/amd64
     container_name: airflow-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-airflow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airflow}
       POSTGRES_DB: ${POSTGRES_DB:-airflow}
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airflow} -d ${POSTGRES_DB:-airflow}" ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airflow} -d ${POSTGRES_DB:-airflow}"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
-    networks:
-      - airflow
+    networks: [airflow]
 
   airflow-init:
-    <<: *airflow-common
+    build:
+      context: ..
+      dockerfile: Dockerfile.airflow
+    image: loan-default-airflow:latest
     container_name: airflow-init
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        mkdir -p /opt/airflow/mlruns /opt/airflow/artifacts /opt/airflow/logs /opt/airflow/tmp
-        /home/airflow/.local/bin/airflow db migrate
-        bash /opt/airflow/create_airflow_user.sh
-    restart: "no"
-
-  webserver:
-    <<: *airflow-common
-    container_name: airflow-webserver
-    ports:
-      - "8080:8080"
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        rm -f /opt/airflow/airflow-webserver.pid || true
-        exec /home/airflow/.local/bin/airflow webserver
-    healthcheck:
-      test: [ "CMD", "curl", "--fail", "http://localhost:8080/health" ]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-      start_period: 60s
-    restart: always
-
-  scheduler:
-    <<: *airflow-common
-    container_name: airflow-scheduler
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        exec /home/airflow/.local/bin/airflow scheduler
-    healthcheck:
-      test: [ "CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $(hostname) || exit 1" ]
-      interval: 30s
-      timeout: 30s
-      retries: 3
-      start_period: 60s
-    restart: always
-
-  mlflow:
-    image: ghcr.io/mlflow/mlflow:v3.1.4
-    platform: linux/amd64
-    container_name: mlflow
-    user: "0:0"   # ✅ run as root to avoid volume permission issues
+    depends_on:
+      - postgres
     env_file:
       - ../.env
     environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres/${POSTGRES_DB:-airflow}
+    command: >
+      bash -c "airflow db migrate && bash /opt/airflow/create_airflow_user.sh"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
+      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json  # mount key file only
+      - ../airflow/create_airflow_user.sh:/opt/airflow/create_airflow_user.sh
+      - airflow-tmp:/opt/airflow/tmp
+    networks: [airflow]
+    restart: "no"
+
+  webserver:
+    image: loan-default-airflow:latest
+    container_name: airflow-webserver
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ../.env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres/${POSTGRES_DB:-airflow}
+      PYTHONPATH: /opt/airflow:/opt/airflow/src
       GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
+      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json
+      - ../requirements.serve.txt:/opt/airflow/requirements.serve.txt  
+      - airflow-tmp:/opt/airflow/tmp
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    command: ["airflow", "webserver"]
+    networks: [airflow]
+    restart: unless-stopped
+
+  scheduler:
+    image: loan-default-airflow:latest
+    container_name: airflow-scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ../.env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres/${POSTGRES_DB:-airflow}
+      PYTHONPATH: /opt/airflow:/opt/airflow/src
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ../src:/opt/airflow/src
+      - ../data:/opt/airflow/data
+      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json
+      - ../requirements.serve.txt:/opt/airflow/requirements.serve.txt  
+      - airflow-tmp:/opt/airflow/tmp
+    command: ["airflow", "scheduler"]
+    networks: [airflow]
+    restart: unless-stopped
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.1.4
+    container_name: mlflow
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:///mlflow.db
+      --default-artifact-root /mlruns
+    volumes:
+      - mlflow-runs:/mlruns
     ports:
       - "5000:5000"
-    volumes:
-      - mlflow-runs:/opt/airflow/mlruns
-      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
-    command: >
-      mlflow server --backend-store-uri file:/opt/airflow/mlruns
-        --default-artifact-root gs://loan-default-artifacts-loan-default-mlops/mlflow
-        --host 0.0.0.0 --port 5000
-    healthcheck:
-      test: [ "CMD", "curl", "--fail", "http://localhost:5000" ]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-    networks:
-      - airflow
+    networks: [airflow]
+    restart: unless-stopped
 
   serve:
     build:
       context: ..
       dockerfile: Dockerfile.serve
-    platform: linux/amd64
-    container_name: model-serve
+    image: loan-default-serve:latest
+    container_name: airflow-serve
+    env_file:
+      - ../.env
+    environment:
+      MODEL_NAME: ${MODEL_NAME:-loan_default_model}
+      MODEL_ALIAS: ${MODEL_ALIAS:-staging}
+      PORT: 5001
+      MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+    volumes:
+      - ../entrypoint_serve.sh:/opt/airflow/entrypoint_serve.sh
+    command: ["bash", "/opt/airflow/entrypoint_serve.sh"]
     ports:
       - "5001:5001"
-    environment:
-      MLFLOW_TRACKING_URI: http://mlflow:5000
-      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
-      MODEL_NAME: loan_default_model
-      MODEL_ALIAS: staging
-      PORT: 5001
-    volumes:
-      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
-    depends_on:
-      - mlflow
-    healthcheck:
-      test: [ "CMD", "curl", "--fail", "http://localhost:5001/ping" ]
-      interval: 10s
-      timeout: 10s
-      retries: 5
-    networks:
-      - airflow
-
-  monitor:
-    build:
-      context: ..
-      dockerfile: Dockerfile.monitor
-    platform: linux/amd64
-    container_name: airflow-monitor
-    volumes:
-      - ../src:/opt/airflow/src
-      - ../data:/opt/airflow/data
-      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
-    environment:
-      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
-    networks:
-      - airflow
-
-  terraform:
-    build:
-      context: ..
-      dockerfile: Dockerfile.terraform
-    platform: linux/amd64
-    container_name: terraform
-    working_dir: /infra/terraform
-    volumes:
-      - ../infra/terraform:/infra/terraform
-      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
-    environment:
-      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
-    entrypoint: [ "/bin/bash", "-c" ]
-    networks:
-      - airflow
+    networks: [airflow]
+    restart: unless-stopped

@@ -1,0 +1,78 @@
+.
+├── .devcontainer
+│   ├── DEVCONTAINER.md
+│   └── devcontainer.json
+├── .dockerignore
+├── .env
+├── .env.example
+├── .flake8
+├── .github
+│   └── workflows
+│       ├── ci-integration.yml
+│       └── ci.yml
+├── .gitignore
+├── Dockerfile.airflow
+├── Dockerfile.monitor
+├── Dockerfile.serve
+├── Dockerfile.terraform
+├── LICENSE
+├── Makefile
+├── README.md
+├── SECURITY_AND_CONTRIBUTING.md
+├── TROUBLESHOOTING.md
+├── airflow
+│   ├── .compose_hash
+│   ├── .monitor_hash
+│   ├── airflow.cfg
+│   ├── create_airflow_user.sh
+│   ├── dags
+│   │   ├── batch_prediction_dag.py
+│   │   ├── monitoring_dag.py
+│   │   ├── promote_model_dag.py
+│   │   └── train_pipeline_dag.py
+│   ├── docker-compose.yaml
+│   ├── start_all.sh
+│   ├── start_serve.sh
+│   ├── stop_all.sh
+│   ├── stop_serve.sh
+│   ├── troubleshoot.sh
+│   └── webserver_config.py
+├── data
+│   ├── batch_input.csv
+│   └── sample_input.json
+├── entrypoint.sh
+├── infra
+│   └── terraform
+│       ├── .terraform.lock.hcl
+│       ├── README.md
+│       ├── main.tf
+│       ├── outputs.tf
+│       ├── terraform.tfvars
+│       └── variables.tf
+├── keys
+│   └── gcs-service-account.json
+├── pyproject.toml
+├── pytest.ini
+├── repo_tree.txt
+├── requirements-dev.txt
+├── requirements-monitoring.txt
+├── requirements.airflow.txt
+├── requirements.serve.txt
+├── requirements.txt
+├── src
+│   ├── __init__.py
+│   ├── batch_predict.py
+│   ├── monitor_predictions.py
+│   ├── predict.py
+│   ├── train.py
+│   ├── train_and_compare.py
+│   ├── train_with_mlflow.py
+│   ├── tune_xgboost_with_optuna.py
+│   └── utils.py
+├── terraform.sh
+└── tests
+    ├── test_batch_prediction_integration.py
+    ├── test_prediction_integration.py
+    └── test_utils.py
+
+13 directories, 63 files

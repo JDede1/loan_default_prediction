@@ -1,6 +1,6 @@
 .PHONY: install lint format test start stop down start-core stop-core start-serve stop-serve troubleshoot \
 	terraform-init terraform-plan terraform-apply terraform-destroy integration-tests \
-	fix-perms bootstrap clean-disk clean-light stop-hard backup-airflow restore-airflow \
+	fix-perms reset-logs bootstrap clean-disk clean-light stop-hard backup-airflow restore-airflow \
 	reset fresh-reset restart-webserver restart-serve reset-vars verify
 
 # === Python/Dev Setup ===
@@ -139,14 +139,20 @@ integration-tests:
 		webserver pytest tests -m integration -v
 	docker compose -f airflow/docker-compose.yaml down --remove-orphans
 
-# === Permissions ===
-fix-perms:
+# === Permissions & Logs ===
+reset-logs:
+	# Force-remove old logs even if owned by root/50000
+	sudo rm -rf airflow/logs/*
+	mkdir -p airflow/logs airflow/logs/dag_processor_manager
+	sudo chown -R $(USER):$(USER) airflow/logs
+	chmod -R 777 airflow/logs
+	@echo "✅ Airflow logs reset with correct ownership."
+
+fix-perms: reset-logs
 	# Ensure local dirs exist for bind mounts
-	mkdir -p artifacts airflow/artifacts airflow/tmp mlruns airflow/logs
+	mkdir -p artifacts airflow/artifacts airflow/tmp mlruns
 	# Fix permissions for both Airflow + MLflow
-	sudo chmod -R 777 artifacts airflow/artifacts airflow/tmp mlruns airflow/logs
-	# Pre-create subfolder expected by Airflow
-	mkdir -p airflow/logs/dag_processor_manager
+	sudo chmod -R 777 artifacts airflow/artifacts airflow/tmp mlruns
 	# Ensure bootstrap script is executable
 	chmod +x airflow/create_airflow_user.sh || true
 
@@ -241,3 +247,19 @@ verify:
 	-@docker compose -f airflow/docker-compose.yaml logs --tail=20 mlflow || echo "❌ MLflow not starting"
 
 	@echo "\n✅ Verification complete"
+
+# === Vertex AI Trainer Image ===
+PROJECT_ID ?= loan-default-mlops
+REGION ?= us-central1
+REPO ?= mlops
+IMAGE ?= loan-default-trainer
+TAG ?= latest
+TRAINER_IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${IMAGE}:${TAG}
+
+build-trainer:
+	docker build -f Dockerfile.trainer -t ${TRAINER_IMAGE} .
+
+push-trainer:
+	docker push ${TRAINER_IMAGE}
+
+trainer: build-trainer push-trainer

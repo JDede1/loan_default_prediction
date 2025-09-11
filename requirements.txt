@@ -25,3 +25,4 @@ evidently>=0.4.0
 # === Phase 2 Additions: Google Cloud integration ===
 google-cloud-storage  # let constraints decide (currently 2.14.0)
 gcsfs                 # let constraints decide (currently 2023.12.2.post1)
+fsspec>=2023.6.0      # required for Pandas + gcsfs

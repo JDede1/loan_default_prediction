@@ -1,14 +1,11 @@
 # requirements.airflow.txt
-# === Airflow-specific extras for DAG tasks ===
+# Airflow providers needed for this project
 
-# MLflow client (logging, model registry integration)
-mlflow==3.1.4
+# Google Cloud integration (GCS, BigQuery, etc.)
+apache-airflow-providers-google>=10.0.0
 
-# Google Cloud Storage support (used in your scripts & monitoring)
-google-cloud-storage
-gcsfs
+# Postgres support (Airflow backend + hooks/operators)
+apache-airflow-providers-postgres>=5.7.0
 
-# Config & utility helpers
-python-dotenv
-pyyaml
-requests
+# Vertex AI SDK for submitting training jobs
+google-cloud-aiplatform>=1.38.0
