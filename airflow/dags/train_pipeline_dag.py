@@ -5,12 +5,13 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.trigger_rule import TriggerRule
 from airflow.models import Variable
+from airflow.operators.bash import BashOperator
 import mlflow
 from mlflow.tracking import MlflowClient
 import os
 import requests
 from airflow.utils.email import send_email
-from google.cloud import aiplatform  # 👈 new import
+from google.cloud import aiplatform  # 👈 Vertex AI
 
 # -----------------------
 # Defaults
@@ -92,10 +93,17 @@ def notify_email(subject: str, html_content: str):
 # Vertex AI Training
 # -----------------------
 def submit_vertex_job(**kwargs):
-    project = os.getenv("PROJECT_ID", "loan-default-mlops")
-    region = os.getenv("REGION", "us-central1")
-    image_uri = os.getenv("TRAINER_IMAGE_URI")  # from .env or Airflow Variable
-    staging_bucket = f"gs://{os.getenv('GCS_BUCKET', 'loan-default-artifacts-loan-default-mlops')}"
+    project = Variable.get(
+        "PROJECT_ID", default_var=os.getenv("PROJECT_ID", "loan-default-mlops")
+    )
+    region = Variable.get(
+        "REGION", default_var=os.getenv("REGION", "us-central1")
+    )
+    image_uri = Variable.get(
+        "TRAINER_IMAGE_URI",
+        default_var=os.getenv("TRAINER_IMAGE_URI", ""),
+    )
+    staging_bucket = f"gs://{Variable.get('GCS_BUCKET', default_var=os.getenv('GCS_BUCKET', 'loan-default-artifacts-loan-default-mlops'))}"
 
     # Initialize Vertex AI with staging bucket
     aiplatform.init(project=project, location=region, staging_bucket=staging_bucket)
@@ -176,6 +184,18 @@ with DAG(
     tags=["mlflow", "training", "promotion"],
 ) as dag:
 
+    # 0️⃣ Download tuned params from GCS
+    download_best_params = BashOperator(
+        task_id="download_best_params",
+        bash_command=(
+            "gcloud auth activate-service-account "
+            "--key-file=/opt/airflow/keys/gcs-service-account.json && "
+            f"gsutil cp gs://{os.getenv('GCS_BUCKET', 'loan-default-artifacts-loan-default-mlops')}/artifacts/best_xgb_params.json "
+            f"{BEST_PARAMS_PATH} || echo '⚠️ No best_xgb_params.json found in GCS, continuing with defaults.'"
+        ),
+        cwd="/opt/airflow",
+    )
+
     # 1️⃣ Train model on Vertex AI
     train_model = PythonOperator(
         task_id="train_model",
@@ -220,7 +240,7 @@ with DAG(
     )
 
     # Flow
-    train_model >> decide
+    download_best_params >> train_model >> decide
     decide >> [trigger_promotion, skip_promotion]
     (
         [trigger_promotion, skip_promotion]

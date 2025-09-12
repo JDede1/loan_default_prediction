@@ -1,7 +1,8 @@
 .PHONY: install lint format test start stop down start-core stop-core start-serve stop-serve troubleshoot \
 	terraform-init terraform-plan terraform-apply terraform-destroy integration-tests \
 	fix-perms reset-logs bootstrap clean-disk clean-light stop-hard backup-airflow restore-airflow \
-	reset fresh-reset restart-webserver restart-serve reset-vars verify
+	reset fresh-reset restart-webserver restart-serve reset-vars verify \
+	gcloud-auth build-trainer push-trainer trainer
 
 # === Python/Dev Setup ===
 install:
@@ -151,9 +152,7 @@ reset-logs:
 fix-perms: reset-logs
 	# Ensure local dirs exist for bind mounts
 	mkdir -p artifacts airflow/artifacts airflow/tmp mlruns
-	# Fix permissions for both Airflow + MLflow
 	sudo chmod -R 777 artifacts airflow/artifacts airflow/tmp mlruns
-	# Ensure bootstrap script is executable
 	chmod +x airflow/create_airflow_user.sh || true
 
 # === One-shot setup for fresh envs (optional) ===
@@ -197,20 +196,24 @@ restore-airflow:
 		airflow connections import /opt/airflow/connections.json || true
 	@echo "✅ Airflow Variables and Connections restored"
 
-# === Reset (cached by default) ===
-reset: fix-perms
+reset: fix-perms export-env-vars
 	docker compose -f airflow/docker-compose.yaml down -v
 	docker compose -f airflow/docker-compose.yaml build
 	docker compose -f airflow/docker-compose.yaml run --rm airflow-init
 	docker compose -f airflow/docker-compose.yaml up -d postgres mlflow scheduler webserver
+	# ✅ Auto-import variables
+	docker compose -f airflow/docker-compose.yaml exec webserver \
+	  airflow variables import /opt/airflow/variables.json
 	@echo "✅ Reset complete (cached). Airflow UI → http://localhost:8080 | MLflow UI → http://localhost:5000"
 
-# === Fresh Reset (force no-cache rebuild) ===
-fresh-reset: fix-perms
+fresh-reset: fix-perms export-env-vars
 	docker compose -f airflow/docker-compose.yaml down -v
 	docker compose -f airflow/docker-compose.yaml build --no-cache
 	docker compose -f airflow/docker-compose.yaml run --rm airflow-init
 	docker compose -f airflow/docker-compose.yaml up -d postgres mlflow scheduler webserver
+	# ✅ Auto-import variables
+	docker compose -f airflow/docker-compose.yaml exec webserver \
+	  airflow variables import /opt/airflow/variables.json
 	@echo "✅ Fresh reset complete (no cache). Airflow UI → http://localhost:8080 | MLflow UI → http://localhost:5000"
 
 restart-webserver:
@@ -256,10 +259,38 @@ IMAGE ?= loan-default-trainer
 TAG ?= latest
 TRAINER_IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${IMAGE}:${TAG}
 
-build-trainer:
+gcloud-auth:
+	@echo "🔐 Ensuring Docker is authenticated with Artifact Registry..."
+	-gcloud auth configure-docker ${REGION}-docker.pkg.dev
+
+build-trainer: gcloud-auth
 	docker build -f Dockerfile.trainer -t ${TRAINER_IMAGE} .
 
-push-trainer:
+push-trainer: gcloud-auth
 	docker push ${TRAINER_IMAGE}
 
 trainer: build-trainer push-trainer
+
+# === Generate Airflow Variables from .env ===
+export-env-vars:
+	@echo "📦 Exporting .env → airflow/variables.json"
+	@python3 - <<'EOF'
+import os, json
+from dotenv import load_dotenv
+load_dotenv(".env")
+
+keys = [
+    "PROJECT_ID", "REGION", "TRAINER_IMAGE_URI",
+    "MODEL_NAME", "MODEL_ALIAS",
+    "PROMOTE_FROM_ALIAS", "PROMOTE_TO_ALIAS",
+    "PROMOTION_AUC_THRESHOLD", "PROMOTION_F1_THRESHOLD",
+    "TRAIN_DATA_PATH", "BEST_PARAMS_PATH", "GCS_BUCKET",
+    "MLFLOW_TRACKING_URI", "MLFLOW_ARTIFACT_URI",
+    "SLACK_WEBHOOK_URL", "ALERT_EMAILS"
+]
+vars = {k: os.getenv(k, "") for k in keys}
+os.makedirs("airflow", exist_ok=True)
+with open("airflow/variables.json", "w") as f:
+    json.dump(vars, f, indent=2)
+print("✅ airflow/variables.json updated")
+EOF

@@ -75,7 +75,8 @@ services:
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json
-      - ../requirements.serve.txt:/opt/airflow/requirements.serve.txt  
+      - ../requirements.serve.txt:/opt/airflow/requirements.serve.txt
+      - ../airflow/variables.json:/opt/airflow/variables.json   
       - airflow-tmp:/opt/airflow/tmp
     ports:
       - "8080:8080"
@@ -109,7 +110,8 @@ services:
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json
-      - ../requirements.serve.txt:/opt/airflow/requirements.serve.txt  
+      - ../requirements.serve.txt:/opt/airflow/requirements.serve.txt
+      - ../airflow/variables.json:/opt/airflow/variables.json   
       - airflow-tmp:/opt/airflow/tmp
     command: ["airflow", "scheduler"]
     networks: [airflow]

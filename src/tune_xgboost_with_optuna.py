@@ -63,7 +63,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_path",
         default=os.getenv(
-            "TRAIN_DATA_PATH",  # ✅ unified with .env + train script
+            "TRAIN_DATA_PATH",  
             "/opt/airflow/data/loan_default_selected_features_clean.csv",
         ),
         help="Path to training data (CSV). Supports gs:// paths if gcsfs is installed.",

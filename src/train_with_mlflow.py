@@ -189,7 +189,13 @@ def log_and_register_model(
             registered_model_name=model_name,  # ✅ direct registry logging
             signature=signature,
             input_example=input_example,
-            pip_requirements=os.path.join(BASE_DIR, "requirements.serve.txt"),
+            pip_requirements=[
+                "mlflow==3.1.4",
+                "xgboost==1.7.6",
+                "scikit-learn",
+                "pandas",
+                "numpy",
+            ],  # ✅ avoid missing file by inlining requirements
         )
 
         # Save & log plots
@@ -244,11 +250,18 @@ def main(args):
     print(f"🚀 Training XGBoost for model: {args.model_name}")
     (X_train, X_test, y_train, y_test), feature_names = load_data(args.data_path)
 
-    if args.params_path and os.path.exists(args.params_path):
-        with open(args.params_path, "r") as f:
-            tuned_params = json.load(f)
-    else:
-        tuned_params = None
+    tuned_params = None
+    if args.params_path:
+        if args.params_path.startswith("gs://"):
+            try:
+                print(f"☁️ Fetching tuned params from GCS: {args.params_path}")
+                tuned_params = pd.read_json(args.params_path, lines=True).iloc[0].to_dict()
+            except Exception as e:
+                print(f"⚠️ Could not load tuned params from GCS: {e}")
+        elif os.path.exists(args.params_path):
+            print(f"📥 Loading tuned params locally: {args.params_path}")
+            with open(args.params_path, "r") as f:
+                tuned_params = json.load(f)
 
     model, params_used = train_xgboost(X_train, y_train, tuned_params)
     metrics = evaluate_model(model, X_test, y_test)
@@ -265,7 +278,6 @@ def main(args):
         feature_names=feature_names,
         experiment_id=experiment_id,
     )
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
