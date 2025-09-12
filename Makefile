@@ -203,7 +203,7 @@ reset: fix-perms export-env-vars
 	docker compose -f airflow/docker-compose.yaml up -d postgres mlflow scheduler webserver
 	# ✅ Auto-import variables
 	docker compose -f airflow/docker-compose.yaml exec webserver \
-	  airflow variables import /opt/airflow/variables.json
+		airflow variables import /opt/airflow/variables.json
 	@echo "✅ Reset complete (cached). Airflow UI → http://localhost:8080 | MLflow UI → http://localhost:5000"
 
 fresh-reset: fix-perms export-env-vars
@@ -213,7 +213,7 @@ fresh-reset: fix-perms export-env-vars
 	docker compose -f airflow/docker-compose.yaml up -d postgres mlflow scheduler webserver
 	# ✅ Auto-import variables
 	docker compose -f airflow/docker-compose.yaml exec webserver \
-	  airflow variables import /opt/airflow/variables.json
+		airflow variables import /opt/airflow/variables.json
 	@echo "✅ Fresh reset complete (no cache). Airflow UI → http://localhost:8080 | MLflow UI → http://localhost:5000"
 
 restart-webserver:
@@ -274,23 +274,4 @@ trainer: build-trainer push-trainer
 # === Generate Airflow Variables from .env ===
 export-env-vars:
 	@echo "📦 Exporting .env → airflow/variables.json"
-	@python3 - <<'EOF'
-import os, json
-from dotenv import load_dotenv
-load_dotenv(".env")
-
-keys = [
-    "PROJECT_ID", "REGION", "TRAINER_IMAGE_URI",
-    "MODEL_NAME", "MODEL_ALIAS",
-    "PROMOTE_FROM_ALIAS", "PROMOTE_TO_ALIAS",
-    "PROMOTION_AUC_THRESHOLD", "PROMOTION_F1_THRESHOLD",
-    "TRAIN_DATA_PATH", "BEST_PARAMS_PATH", "GCS_BUCKET",
-    "MLFLOW_TRACKING_URI", "MLFLOW_ARTIFACT_URI",
-    "SLACK_WEBHOOK_URL", "ALERT_EMAILS"
-]
-vars = {k: os.getenv(k, "") for k in keys}
-os.makedirs("airflow", exist_ok=True)
-with open("airflow/variables.json", "w") as f:
-    json.dump(vars, f, indent=2)
-print("✅ airflow/variables.json updated")
-EOF
+	@python3 scripts/export_env_vars.py
