@@ -1,0 +1,18 @@
+{
+  "PROJECT_ID": "loan-default-mlops",
+  "REGION": "us-central1",
+  "TRAINER_IMAGE_URI": "us-central1-docker.pkg.dev/loan-default-mlops/mlops/loan-default-trainer:latest",
+  "MODEL_NAME": "loan_default_model",
+  "MODEL_ALIAS": "staging",
+  "PROMOTE_FROM_ALIAS": "staging",
+  "PROMOTE_TO_ALIAS": "production",
+  "PROMOTION_AUC_THRESHOLD": "0.75",
+  "PROMOTION_F1_THRESHOLD": "0.0",
+  "TRAIN_DATA_PATH": "gs://loan-default-artifacts-loan-default-mlops/data/loan_default_selected_features_clean.csv",
+  "BEST_PARAMS_PATH": "/opt/airflow/artifacts/best_xgb_params.json",
+  "GCS_BUCKET": "loan-default-artifacts-loan-default-mlops",
+  "MLFLOW_TRACKING_URI": "http://mlflow:5000",
+  "MLFLOW_ARTIFACT_URI": "gs://loan-default-artifacts-loan-default-mlops/mlflow",
+  "SLACK_WEBHOOK_URL": "https://hooks.slack.com/services/XXX/YYY/ZZZ",
+  "ALERT_EMAILS": "dedenuoljibola@gmail.com"
+}

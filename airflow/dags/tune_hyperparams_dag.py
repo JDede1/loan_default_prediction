@@ -37,6 +37,9 @@ GCS_BUCKET = Variable.get(
     default_var=os.getenv("GCS_BUCKET", "loan-default-artifacts-loan-default-mlops"),
 )
 
+# ✅ Persistent Optuna DB inside artifacts folder
+OPTUNA_DB_PATH = "/opt/airflow/artifacts/optuna_study.db"
+
 # -----------------------
 # DAG Definition
 # -----------------------
@@ -50,7 +53,7 @@ with DAG(
     tags=["optuna", "tuning", "xgboost"],
 ) as dag:
 
-    # 1️⃣ Run Optuna tuning
+    # 1️⃣ Run Optuna tuning (with persistent SQLite backend)
     run_tuning = BashOperator(
         task_id="run_optuna_tuning",
         bash_command=(
@@ -65,6 +68,8 @@ with DAG(
                 "GOOGLE_APPLICATION_CREDENTIALS",
                 "/opt/airflow/keys/gcs-service-account.json",
             ),
+            # 👇 new env var so tune_xgboost_with_optuna.py can reuse study
+            "OPTUNA_DB_PATH": OPTUNA_DB_PATH,
         },
     )
 
@@ -72,7 +77,8 @@ with DAG(
     upload_best_params = BashOperator(
         task_id="upload_best_params",
         bash_command=(
-            "gcloud auth activate-service-account --key-file=/opt/airflow/keys/gcs-service-account.json && "
+            "gcloud auth activate-service-account "
+            "--key-file=/opt/airflow/keys/gcs-service-account.json && "
             f"gsutil cp {BEST_PARAMS_PATH} gs://{GCS_BUCKET}/artifacts/best_xgb_params.json"
         ),
     )

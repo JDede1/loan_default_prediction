@@ -54,7 +54,6 @@ def make_objective(data_path: str):
 
     return objective
 
-
 # -----------------------
 # Main
 # -----------------------
@@ -78,8 +77,18 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Run Optuna study
-    study = optuna.create_study(direction="maximize")
+    # ✅ Persistent Optuna storage (inside artifacts volume)
+    storage_path = os.getenv("OPTUNA_DB_PATH", "/opt/airflow/artifacts/optuna_study.db")
+    storage_uri = f"sqlite:///{storage_path}"
+
+    study = optuna.create_study(
+        direction="maximize",
+        study_name="loan_default_optuna",
+        storage=storage_uri,
+        load_if_exists=True,  # resume if already exists
+    )
+
+    # Run trials
     study.optimize(make_objective(args.data_path), n_trials=args.trials)
 
     print("\n📊 Best trial:")

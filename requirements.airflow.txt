@@ -1,4 +1,3 @@
-# requirements.airflow.txt
 # Airflow providers needed for this project
 
 # Google Cloud integration (GCS, BigQuery, etc.)
@@ -9,3 +8,9 @@ apache-airflow-providers-postgres>=5.7.0
 
 # Vertex AI SDK for submitting training jobs
 google-cloud-aiplatform>=1.38.0
+
+# =====================
+# ML / Tuning libraries
+# =====================
+optuna==3.3.0        # hyperparameter tuning
+gcsfs>=2023.6.0      # pandas can read/write gs:// paths
