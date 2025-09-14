@@ -54,6 +54,7 @@ def make_objective(data_path: str):
 
     return objective
 
+
 # -----------------------
 # Main
 # -----------------------
@@ -62,7 +63,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_path",
         default=os.getenv(
-            "TRAIN_DATA_PATH",  
+            "TRAIN_DATA_PATH",
             "/opt/airflow/data/loan_default_selected_features_clean.csv",
         ),
         help="Path to training data (CSV). Supports gs:// paths if gcsfs is installed.",
@@ -72,19 +73,22 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_params",
-        default=os.getenv("BEST_PARAMS_PATH", "artifacts/best_xgb_params.json"),
+        default=os.getenv("BEST_PARAMS_PATH", "/opt/airflow/artifacts/best_xgb_params.json"),
         help="Where to save best parameters JSON (can be gs:// path).",
     )
     args = parser.parse_args()
 
-    # ✅ Persistent Optuna storage (inside artifacts volume)
-    storage_path = os.getenv("OPTUNA_DB_PATH", "/opt/airflow/artifacts/optuna_study.db")
-    storage_uri = f"sqlite:///{storage_path}"
+    # ✅ Persistent Optuna storage in artifacts volume
+    db_path = os.getenv("OPTUNA_DB_PATH", "/opt/airflow/artifacts/optuna_study.db")
+    db_dir = os.path.dirname(db_path)
+    os.makedirs(db_dir, exist_ok=True)  # ensure directory exists
+    print(f"✅ Ensured Optuna DB directory exists: {db_dir}")
 
+    storage_path = f"sqlite:///{db_path}"
     study = optuna.create_study(
         direction="maximize",
         study_name="loan_default_optuna",
-        storage=storage_uri,
+        storage=storage_path,
         load_if_exists=True,  # resume if already exists
     )
 

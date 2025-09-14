@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+from airflow.operators.python import PythonOperator
 from airflow.models import Variable
 import os
+from google.cloud import storage  # ✅ use Python client
 
 # -----------------------
 # Defaults
@@ -41,6 +43,19 @@ GCS_BUCKET = Variable.get(
 OPTUNA_DB_PATH = "/opt/airflow/artifacts/optuna_study.db"
 
 # -----------------------
+# Helper functions
+# -----------------------
+def upload_to_gcs(local_path, bucket_name, blob_name):
+    """Upload file to GCS using Python client."""
+    client = storage.Client.from_service_account_json(
+        "/opt/airflow/keys/gcs-service-account.json"
+    )
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(blob_name)
+    blob.upload_from_filename(local_path)
+    print(f"✅ Uploaded {local_path} → gs://{bucket_name}/{blob_name}")
+
+# -----------------------
 # DAG Definition
 # -----------------------
 with DAG(
@@ -59,7 +74,7 @@ with DAG(
         bash_command=(
             "python /opt/airflow/src/tune_xgboost_with_optuna.py "
             f"--data_path {TRAIN_DATA_PATH} "
-            "--trials 25 "
+            "--trials 10 "
             f"--output_params {BEST_PARAMS_PATH}"
         ),
         cwd="/opt/airflow",
@@ -68,19 +83,23 @@ with DAG(
                 "GOOGLE_APPLICATION_CREDENTIALS",
                 "/opt/airflow/keys/gcs-service-account.json",
             ),
-            # 👇 new env var so tune_xgboost_with_optuna.py can reuse study
             "OPTUNA_DB_PATH": OPTUNA_DB_PATH,
         },
     )
 
-    # 2️⃣ Upload best params to GCS (for portability)
-    upload_best_params = BashOperator(
+    # 2️⃣ Upload best params JSON to GCS
+    upload_best_params = PythonOperator(
         task_id="upload_best_params",
-        bash_command=(
-            "gcloud auth activate-service-account "
-            "--key-file=/opt/airflow/keys/gcs-service-account.json && "
-            f"gsutil cp {BEST_PARAMS_PATH} gs://{GCS_BUCKET}/artifacts/best_xgb_params.json"
-        ),
+        python_callable=upload_to_gcs,
+        op_args=[BEST_PARAMS_PATH, GCS_BUCKET, "artifacts/best_xgb_params.json"],
     )
 
-    run_tuning >> upload_best_params
+    # 3️⃣ Upload Optuna DB to GCS (for resuming studies anywhere)
+    upload_optuna_db = PythonOperator(
+        task_id="upload_optuna_db",
+        python_callable=upload_to_gcs,
+        op_args=[OPTUNA_DB_PATH, GCS_BUCKET, "artifacts/optuna_study.db"],
+    )
+
+    # Flow
+    run_tuning >> [upload_best_params, upload_optuna_db]

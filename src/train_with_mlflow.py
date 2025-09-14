@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import shutil
+import socket
 
 import matplotlib.pyplot as plt
 import mlflow
@@ -21,6 +22,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
 
+
 # -----------------------
 # Constants
 # -----------------------
@@ -28,38 +30,64 @@ BASE_DIR = "/opt/airflow"  # Mounted project root in container
 ARTIFACT_DIR = os.path.join(BASE_DIR, "artifacts")
 TMP_ARTIFACT_DIR = "/tmp/artifacts"  # Always writable in container
 
-# Ensure directories exist
 os.makedirs(ARTIFACT_DIR, exist_ok=True)
 os.makedirs(TMP_ARTIFACT_DIR, exist_ok=True)
+
 
 # -----------------------
 # MLflow Configuration
 # -----------------------
-mlflow.set_tracking_uri(
-    os.getenv("MLFLOW_TRACKING_URI", f"file://{os.path.join(BASE_DIR, 'mlruns')}")
-)
+def is_host_reachable(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            return True
+    except OSError:
+        return False
+
+
+GCS_BUCKET = os.getenv("GCS_BUCKET", "loan-default-artifacts-loan-default-mlops")
+mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+mlflow_artifact_uri = os.getenv("MLFLOW_ARTIFACT_URI", f"gs://{GCS_BUCKET}/mlflow")
+vertex_training = os.getenv("VERTEX_AI_TRAINING", "0") == "1"
+
+if vertex_training:
+    # ✅ Vertex AI: use MLflow server for registry + metrics, GCS for artifacts
+    print(f"✅ Vertex AI mode. Registry+Metrics → {mlflow_tracking_uri}, Artifacts → {mlflow_artifact_uri}")
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+else:
+    # ✅ Local Airflow / Docker
+    if mlflow_tracking_uri and "http://mlflow:5000" in mlflow_tracking_uri:
+        if is_host_reachable("mlflow", 5000):
+            print(f"✅ Using MLflow server: {mlflow_tracking_uri}")
+            mlflow.set_tracking_uri(mlflow_tracking_uri)
+        else:
+            print("⚠️ MLflow server not reachable, falling back to file:// logging")
+            mlflow.set_tracking_uri(f"file://{os.path.join(BASE_DIR, 'mlruns')}")
+    else:
+        mlflow.set_tracking_uri(f"file://{os.path.join(BASE_DIR, 'mlruns')}")
+
 EXPERIMENT_NAME = "loan_default_experiment"
 client = MlflowClient()
 
 experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
 if experiment is None:
     experiment_id = client.create_experiment(
-        EXPERIMENT_NAME, artifact_location=os.getenv("MLFLOW_ARTIFACT_URI")
+        EXPERIMENT_NAME,
+        artifact_location=mlflow_artifact_uri,  # ✅ always GCS artifacts
     )
 else:
     experiment_id = experiment.experiment_id
 
 
 # -----------------------
-# Load and Split Data
+# Data Loading
 # -----------------------
 def load_data(path: str):
-    """Load data from local CSV or GCS path (gs://...)."""
     if path.startswith("gs://"):
-        print(f"☁️  Loading training data from GCS: {path}")
+        print(f"☁️ Loading training data from GCS: {path}")
     else:
         print(f"📥 Loading training data from local path: {path}")
-    df = pd.read_csv(path)  # gcsfs enables pd.read_csv(gs://...) automatically
+    df = pd.read_csv(path)
     X = df.drop("loan_status", axis=1)
     y = df["loan_status"]
     return (
@@ -69,7 +97,7 @@ def load_data(path: str):
 
 
 # -----------------------
-# Train Model
+# Model Training
 # -----------------------
 def train_xgboost(X_train, y_train, custom_params=None):
     scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
@@ -79,7 +107,6 @@ def train_xgboost(X_train, y_train, custom_params=None):
         "random_state": 42,
         "use_label_encoder": False,
     }
-
     if custom_params:
         base_params.update(custom_params)
 
@@ -89,7 +116,7 @@ def train_xgboost(X_train, y_train, custom_params=None):
 
 
 # -----------------------
-# Evaluate Model
+# Evaluation
 # -----------------------
 def evaluate_model(model, X_test, y_test):
     y_pred = model.predict(X_test)
@@ -103,10 +130,9 @@ def evaluate_model(model, X_test, y_test):
 
 
 # -----------------------
-# Save Visuals (safe write)
+# Plot Helpers
 # -----------------------
 def save_plot_safely(fig, filename):
-    """Save matplotlib figure to tmp dir, then try copying to final location."""
     tmp_path = os.path.join(TMP_ARTIFACT_DIR, os.path.basename(filename))
     fig.savefig(tmp_path)
     plt.close(fig)
@@ -159,7 +185,7 @@ def save_confusion_matrix_plot(y_test, y_pred, filename):
 
 
 # -----------------------
-# Log Everything to MLflow
+# MLflow Logging
 # -----------------------
 def log_and_register_model(
     model,
@@ -176,17 +202,15 @@ def log_and_register_model(
         run_id = run.info.run_id
         print(f"Run ID: {run_id}")
 
-        # Log metrics & params
         mlflow.log_metrics(metrics)
         mlflow.log_params(params)
 
-        # Log + Register model in one step
         input_example = X_test.iloc[:1]
         signature = infer_signature(X_test, model.predict(X_test))
         mlflow.xgboost.log_model(
             model,
             artifact_path="model",
-            registered_model_name=model_name,  # ✅ direct registry logging
+            registered_model_name=model_name,
             signature=signature,
             input_example=input_example,
             pip_requirements=[
@@ -195,35 +219,25 @@ def log_and_register_model(
                 "scikit-learn",
                 "pandas",
                 "numpy",
-            ],  # ✅ avoid missing file by inlining requirements
+            ],
         )
 
-        # Save & log plots
         plot_paths = []
         if feature_names is not None:
             plot_paths.append(
                 save_feature_importance_plot(
-                    model,
-                    feature_names,
-                    os.path.join(ARTIFACT_DIR, "feature_importance.png"),
+                    model, feature_names, os.path.join(ARTIFACT_DIR, "feature_importance.png")
                 )
             )
-
         y_pred = model.predict(X_test)
         y_proba = model.predict_proba(X_test)[:, 1]
-
         plot_paths.append(
-            save_roc_curve_plot(
-                y_test, y_proba, os.path.join(ARTIFACT_DIR, "roc_curve.png")
-            )
+            save_roc_curve_plot(y_test, y_proba, os.path.join(ARTIFACT_DIR, "roc_curve.png"))
         )
         plot_paths.append(
-            save_confusion_matrix_plot(
-                y_test, y_pred, os.path.join(ARTIFACT_DIR, "confusion_matrix.png")
-            )
+            save_confusion_matrix_plot(y_test, y_pred, os.path.join(ARTIFACT_DIR, "confusion_matrix.png"))
         )
 
-        # Log whichever plots exist (even if only in tmp)
         for path in plot_paths:
             mlflow.log_artifact(path, artifact_path="artifacts")
 
@@ -232,13 +246,10 @@ def log_and_register_model(
         except PermissionError:
             print(f"⚠️ Skipped logging from {ARTIFACT_DIR} due to permissions.")
 
-        # ✅ Assign alias after registration
         if alias:
             latest_version = client.get_latest_versions(model_name, stages=[])[0].version
             client.set_registered_model_alias(
-                name=model_name,
-                alias=alias.lower(),
-                version=latest_version,
+                name=model_name, alias=alias.lower(), version=latest_version
             )
             print(f"Assigned alias '{alias}' to version {latest_version}")
 
@@ -278,6 +289,7 @@ def main(args):
         feature_names=feature_names,
         experiment_id=experiment_id,
     )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

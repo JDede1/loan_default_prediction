@@ -2,10 +2,9 @@
 # Dockerfile.trainer (for Vertex AI)
 # ============================
 
-# Use lightweight Python base
 FROM python:3.11-slim
 
-# Install system deps for ML libraries
+# Install system dependencies for ML libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
@@ -16,11 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
-# Copy base requirements
-COPY requirements.txt /app/requirements.txt
+# Copy Vertex-specific requirements
+COPY requirements-vertex.txt /app/requirements-vertex.txt
 
-# Install ML dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install only what the trainer needs
+RUN pip install --no-cache-dir -r requirements-vertex.txt
 
 # Copy training code
 COPY src/ /app/src/

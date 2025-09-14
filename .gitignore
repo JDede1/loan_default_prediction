@@ -108,3 +108,5 @@ htmlcov/
 # Prediction outputs
 # ==========================
 predictions_*.csv
+
+best_xgb_params.json

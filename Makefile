@@ -150,9 +150,11 @@ reset-logs:
 	@echo "✅ Airflow logs reset with correct ownership."
 
 fix-perms: reset-logs
-	# Ensure local dirs exist for bind mounts
 	mkdir -p artifacts airflow/artifacts airflow/tmp mlruns
 	sudo chmod -R 777 artifacts airflow/artifacts airflow/tmp mlruns
+	# 👇 ensure Optuna DB path is writable
+	sudo touch airflow/artifacts/optuna_study.db || true
+	sudo chmod 666 airflow/artifacts/optuna_study.db || true
 	chmod +x airflow/create_airflow_user.sh || true
 
 # === One-shot setup for fresh envs (optional) ===
@@ -270,6 +272,12 @@ push-trainer: gcloud-auth
 	docker push ${TRAINER_IMAGE}
 
 trainer: build-trainer push-trainer
+
+set-trainer-image:
+	docker compose -f airflow/docker-compose.yaml exec webserver \
+		airflow variables set TRAINER_IMAGE_URI ${TRAINER_IMAGE}
+	@echo "✅ Airflow variable TRAINER_IMAGE_URI set to ${TRAINER_IMAGE}"
+
 
 # === Generate Airflow Variables from .env ===
 export-env-vars:

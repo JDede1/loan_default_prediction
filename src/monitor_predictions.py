@@ -18,6 +18,7 @@ except ImportError:
 
 from google.cloud import storage
 
+
 # =========================
 # Paths & constants
 # =========================
@@ -34,9 +35,7 @@ os.makedirs(TMP_ARTIFACT_DIR, exist_ok=True)
 # Helpers
 # =========================
 def list_prediction_files(directories: List[str]) -> List[str]:
-    """Return a sorted (newest-first) list of predictions_*.csv across given
-    directories.
-    """
+    """Return a sorted (newest-first) list of predictions_*.csv across given directories."""
     found = []
     for d in directories:
         try:
@@ -53,8 +52,7 @@ def get_latest_prediction_file() -> str:
     candidates = list_prediction_files([ARTIFACT_DIR, TMP_ARTIFACT_DIR])
     if not candidates:
         raise FileNotFoundError(
-            "❌ No batch prediction files found in "
-            f"{ARTIFACT_DIR} or {TMP_ARTIFACT_DIR}."
+            f"❌ No batch prediction files found in {ARTIFACT_DIR} or {TMP_ARTIFACT_DIR}."
         )
     latest = candidates[0]
     print(f"✅ Using latest batch predictions: {latest}")
@@ -71,10 +69,7 @@ def safe_write_bytes(path: str, data: bytes) -> str:
         shutil.copy2(tmp_name, path)
         return path
     except PermissionError:
-        print(
-            "⚠️ Permission denied writing directly to "
-            f"{path}. Keeping in tmp: {tmp_name}"
-        )
+        print(f"⚠️ Permission denied writing {path}. Keeping in tmp: {tmp_name}")
         return tmp_name
 
 
@@ -99,50 +94,76 @@ def read_csv_maybe_gcs(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def notify_slack(message: str):
+    """Send a message to Slack if webhook is configured."""
+    url = os.getenv("SLACK_WEBHOOK_URL", "")
+    if not url:
+        return
+    try:
+        import requests
+        requests.post(url, headers={"Content-Type": "application/json"},
+                      data=json.dumps({"text": message}), timeout=10)
+    except Exception as e:
+        print(f"⚠️ Slack notify failed: {e}")
+
+
 # =========================
 # Main
 # =========================
 def main(args):
-    # Determine training and prediction paths
+    # --------------------
+    # Resolve input paths
+    # --------------------
     train_data_path = args.train_data_path or os.getenv("TRAIN_DATA_PATH")
     prediction_path = args.prediction_path
 
+    # Fallback to Airflow Variables if needed
+    if not train_data_path and Variable:
+        try:
+            train_data_path = Variable.get("TRAIN_DATA_PATH", default_var="")
+        except Exception:
+            train_data_path = ""
+
+    if not prediction_path and Variable:
+        try:
+            prediction_path = Variable.get("LATEST_PREDICTION_PATH", default_var="")
+        except Exception:
+            prediction_path = ""
+
     if not prediction_path:
-        # Try Airflow Variable first
-        if Variable:
-            try:
-                prediction_path = Variable.get("LATEST_PREDICTION_PATH", default_var="")
-            except Exception:
-                prediction_path = ""
-        if not prediction_path:
-            print("🔎 Searching for latest batch prediction file...")
-            prediction_path = get_latest_prediction_file()
+        print("🔎 Searching for latest batch prediction file...")
+        prediction_path = get_latest_prediction_file()
 
     if not train_data_path or not prediction_path:
-        raise ValueError(
-            "❌ Both TRAIN_DATA_PATH and PREDICTION_PATH must be provided. "
-            f"Got TRAIN_DATA_PATH={train_data_path}, "
-            f"PREDICTION_PATH={prediction_path}"
-        )
+        msg = (f"❌ Missing paths: TRAIN_DATA_PATH={train_data_path}, "
+               f"PREDICTION_PATH={prediction_path}")
+        notify_slack(msg)
+        raise ValueError(msg)
 
     print(f"📌 TRAIN_DATA_PATH={train_data_path}")
     print(f"📌 PREDICTION_PATH={prediction_path}")
 
-    # Unique filenames per run
+    # --------------------
+    # File naming
+    # --------------------
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     report_json_path = os.path.join(ARTIFACT_DIR, f"monitoring_report_{timestamp}.json")
     report_html_path = os.path.join(ARTIFACT_DIR, f"monitoring_report_{timestamp}.html")
 
-    # 1) Load training (reference) data
+    # --------------------
+    # Load datasets
+    # --------------------
     print("📦 Loading training (reference) data...")
     train_df = read_csv_maybe_gcs(train_data_path)
     print(f"✅ train_df: {train_df.shape[0]} rows, {train_df.shape[1]} cols")
 
-    # 2) Load batch predictions
+    print("📦 Loading batch predictions...")
     batch_df = read_csv_maybe_gcs(prediction_path)
     print(f"✅ batch_df: {batch_df.shape[0]} rows, {batch_df.shape[1]} cols")
 
-    # 3) Ensure target column alignment
+    # --------------------
+    # Align columns
+    # --------------------
     TARGET_COL = "loan_status"
     if "prediction" in train_df.columns:
         train_df = train_df.drop(columns=["prediction"])
@@ -158,20 +179,20 @@ def main(args):
     batch_df = batch_df[common_cols]
     print(f"✅ Aligned on {len(common_cols)} columns")
 
-    # 4) Column mapping for Evidently
+    # --------------------
+    # Run Evidently
+    # --------------------
+    print("📊 Running Evidently drift report...")
     column_mapping = ColumnMapping()
     column_mapping.target = TARGET_COL
 
-    # 5) Build & run Evidently report
-    print("📊 Running Evidently drift report...")
     report = Report(metrics=[DataDriftPreset(), TargetDriftPreset()])
-    report.run(
-        reference_data=train_df,
-        current_data=batch_df,
-        column_mapping=column_mapping,
-    )
+    report.run(reference_data=train_df, current_data=batch_df,
+               column_mapping=column_mapping)
 
-    # 6) Save reports locally (safe write)
+    # --------------------
+    # Save reports
+    # --------------------
     json_text = json.dumps(report.as_dict(), indent=2)
     final_json_path = safe_write_text(report_json_path, json_text)
 
@@ -184,7 +205,9 @@ def main(args):
     print(f"   • HTML: {final_html_path}")
     print(f"🕒 Timestamp: {timestamp}")
 
-    # 7) Optional: Upload to GCS
+    # --------------------
+    # Upload to GCS if enabled
+    # --------------------
     storage_backend = os.getenv("STORAGE_BACKEND", "local")
     gcs_bucket = os.getenv("GCS_BUCKET")
 
@@ -194,21 +217,25 @@ def main(args):
         upload_to_gcs(final_json_path, gcs_bucket, dest_json)
         upload_to_gcs(final_html_path, gcs_bucket, dest_html)
 
+    # --------------------
+    # Optional: Log to MLflow
+    # --------------------
+    try:
+        import mlflow
+        mlflow.log_dict(report.as_dict(), "monitoring/report.json")
+        print("✅ Monitoring report also logged to MLflow")
+    except Exception as e:
+        print(f"⚠️ Skipped MLflow logging: {e}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run Evidently monitoring on training vs prediction data"
     )
-    parser.add_argument(
-        "--train_data_path",
-        type=str,
-        help="Path to training data (CSV). Supports gs:// paths.",
-    )
-    parser.add_argument(
-        "--prediction_path",
-        type=str,
-        help="Path to prediction data (CSV). Supports gs:// paths.",
-    )
+    parser.add_argument("--train_data_path", type=str,
+                        help="Path to training data (CSV). Supports gs:// paths.")
+    parser.add_argument("--prediction_path", type=str,
+                        help="Path to prediction data (CSV). Supports gs:// paths.")
     args = parser.parse_args()
 
     main(args)

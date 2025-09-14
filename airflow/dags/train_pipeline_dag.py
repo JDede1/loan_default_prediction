@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta 
+from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
@@ -11,7 +11,7 @@ from mlflow.tracking import MlflowClient
 import os
 import requests
 from airflow.utils.email import send_email
-from google.cloud import aiplatform  # 👈 Vertex AI
+from google.cloud import aiplatform
 
 # -----------------------
 # Defaults
@@ -26,46 +26,32 @@ default_args = {
 # -----------------------
 # Config
 # -----------------------
-MODEL_NAME = Variable.get(
-    "MODEL_NAME", default_var=os.getenv("MODEL_NAME", "loan_default_model")
-)
+MODEL_NAME = Variable.get("MODEL_NAME", default_var=os.getenv("MODEL_NAME", "loan_default_model"))
 FROM_ALIAS = Variable.get("PROMOTE_FROM_ALIAS", default_var="staging")
 TO_ALIAS = Variable.get("PROMOTE_TO_ALIAS", default_var="production")
 AUC_THRESHOLD = float(Variable.get("PROMOTION_AUC_THRESHOLD", default_var="0.75"))
-F1_THRESHOLD = float(
-    Variable.get("PROMOTION_F1_THRESHOLD", default_var="0")
-)  # 0 = ignore
+F1_THRESHOLD = float(Variable.get("PROMOTION_F1_THRESHOLD", default_var="0"))
 
-SLACK_WEBHOOK_URL = Variable.get(
-    "SLACK_WEBHOOK_URL", default_var=os.getenv("SLACK_WEBHOOK_URL", "")
-)
+SLACK_WEBHOOK_URL = Variable.get("SLACK_WEBHOOK_URL", default_var=os.getenv("SLACK_WEBHOOK_URL", ""))
 ALERT_EMAILS = Variable.get("ALERT_EMAILS", default_var=os.getenv("ALERT_EMAILS", ""))
 
-TRIGGER_SOURCE = Variable.get(
-    "PROMOTION_TRIGGER_SOURCE", default_var="train_pipeline_dag"
-)
-TRIGGERED_BY = Variable.get(
-    "PROMOTION_TRIGGERED_BY", default_var="automated_weekly_job"
-)
+TRIGGER_SOURCE = Variable.get("PROMOTION_TRIGGER_SOURCE", default_var="train_pipeline_dag")
+TRIGGERED_BY = Variable.get("PROMOTION_TRIGGERED_BY", default_var="automated_weekly_job")
 
+# ✅ MLflow → use GCS as unified backend
+GCS_BUCKET = Variable.get(
+    "GCS_BUCKET",
+    default_var=os.getenv("GCS_BUCKET", "loan-default-artifacts-loan-default-mlops"),
+)
 MLFLOW_TRACKING_URI = Variable.get(
     "MLFLOW_TRACKING_URI",
-    default_var=os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000"),
+    default_var=f"gs://{GCS_BUCKET}/mlruns",
 )
+MLFLOW_ARTIFACT_URI = f"gs://{GCS_BUCKET}/mlflow"
 
-TRAIN_DATA_PATH = Variable.get(
-    "TRAIN_DATA_PATH",
-    default_var=os.getenv(
-        "TRAIN_DATA_PATH", "/opt/airflow/data/loan_default_selected_features_clean.csv"
-    ),
-)
-
-BEST_PARAMS_PATH = Variable.get(
-    "BEST_PARAMS_PATH",
-    default_var=os.getenv(
-        "BEST_PARAMS_PATH", "/opt/airflow/artifacts/best_xgb_params.json"
-    ),
-)
+TRAIN_DATA_PATH = Variable.get("TRAIN_DATA_PATH", default_var=os.getenv("TRAIN_DATA_PATH", "/opt/airflow/data/loan_default_selected_features_clean.csv"))
+BEST_PARAMS_PATH = Variable.get("BEST_PARAMS_PATH", default_var=os.getenv("BEST_PARAMS_PATH", "/opt/airflow/artifacts/best_xgb_params.json"))
+OPTUNA_DB_PATH = "/opt/airflow/artifacts/optuna_study.db"
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 client = MlflowClient()
@@ -83,9 +69,7 @@ def notify_slack(message: str):
 def notify_email(subject: str, html_content: str):
     if ALERT_EMAILS:
         try:
-            send_email(
-                to=ALERT_EMAILS.split(","), subject=subject, html_content=html_content
-            )
+            send_email(to=ALERT_EMAILS.split(","), subject=subject, html_content=html_content)
         except Exception as e:
             print(f"⚠️ Email notification failed: {e}")
 
@@ -93,19 +77,17 @@ def notify_email(subject: str, html_content: str):
 # Vertex AI Training
 # -----------------------
 def submit_vertex_job(**kwargs):
-    project = Variable.get(
-        "PROJECT_ID", default_var=os.getenv("PROJECT_ID", "loan-default-mlops")
-    )
-    region = Variable.get(
-        "REGION", default_var=os.getenv("REGION", "us-central1")
-    )
-    image_uri = Variable.get(
-        "TRAINER_IMAGE_URI",
-        default_var=os.getenv("TRAINER_IMAGE_URI", ""),
-    )
-    staging_bucket = f"gs://{Variable.get('GCS_BUCKET', default_var=os.getenv('GCS_BUCKET', 'loan-default-artifacts-loan-default-mlops'))}"
+    project = Variable.get("PROJECT_ID", default_var=os.getenv("PROJECT_ID", "loan-default-mlops"))
+    region = Variable.get("REGION", default_var=os.getenv("REGION", "us-central1"))
+    image_uri = Variable.get("TRAINER_IMAGE_URI", default_var=os.getenv("TRAINER_IMAGE_URI", ""))
+    staging_bucket = f"gs://{GCS_BUCKET}"
 
-    # Initialize Vertex AI with staging bucket
+    print(f"🚀 Submitting Vertex AI job with image: {image_uri}")
+    print(f"   Project={project}, Region={region}, Staging Bucket={staging_bucket}")
+    print(f"   Data Path={TRAIN_DATA_PATH}, Params Path={BEST_PARAMS_PATH}")
+    print(f"   MLflow Tracking URI={MLFLOW_TRACKING_URI}")
+    print(f"   MLflow Artifact URI={MLFLOW_ARTIFACT_URI}")
+
     aiplatform.init(project=project, location=region, staging_bucket=staging_bucket)
 
     job = aiplatform.CustomJob(
@@ -122,11 +104,20 @@ def submit_vertex_job(**kwargs):
                     "--model_name", MODEL_NAME,
                     "--alias", FROM_ALIAS,
                 ],
+                "env": [
+                    {"name": "VERTEX_AI_TRAINING", "value": "1"},
+                    {"name": "MLFLOW_TRACKING_URI", "value": MLFLOW_TRACKING_URI},
+                    {"name": "MLFLOW_ARTIFACT_URI", "value": MLFLOW_ARTIFACT_URI}, # artifacts in GCS
+                    {"name": "GCS_BUCKET", "value": GCS_BUCKET},
+                    {"name": "TRAIN_DATA_PATH", "value": TRAIN_DATA_PATH},
+                    {"name": "BEST_PARAMS_PATH", "value": BEST_PARAMS_PATH},
+                ],
             },
         }],
     )
 
     job.run(sync=True)
+    print("✅ Vertex AI training job completed.")
 
 # -----------------------
 # Branch: decide whether to promote
@@ -153,29 +144,22 @@ def decide_promotion(ti):
         return "skip_promotion"
 
     ti.xcom_push(key="model_version", value=str(version))
+    print(f"📊 {FROM_ALIAS} model: version={version}, AUC={auc}, F1={f1}")
 
-    print(
-        f"📊 {FROM_ALIAS} model: version={version}, AUC={auc}, F1={f1}, thresholds: AUC>={AUC_THRESHOLD}, F1>={F1_THRESHOLD}"
-    )
-
-    if auc >= AUC_THRESHOLD and (
-        F1_THRESHOLD == 0 or (f1 is not None and f1 >= F1_THRESHOLD)
-    ):
-        msg = f"✅ Model {MODEL_NAME} v{version} meets promotion criteria (AUC={auc}, F1={f1})"
-        notify_slack(msg)
-        notify_email("✅ Model Promotion Approved", msg)
+    if auc >= AUC_THRESHOLD and (F1_THRESHOLD == 0 or (f1 is not None and f1 >= F1_THRESHOLD)):
+        notify_slack(f"✅ Model {MODEL_NAME} v{version} meets promotion criteria")
+        notify_email("✅ Model Promotion Approved", f"Model {MODEL_NAME} v{version} promoted.")
         return "trigger_promotion"
     else:
-        msg = f"❌ Model {MODEL_NAME} v{version} did NOT meet promotion criteria (AUC={auc}, F1={f1})"
-        notify_slack(msg)
-        notify_email("❌ Model Promotion Skipped", msg)
+        notify_slack(f"❌ Model {MODEL_NAME} v{version} did NOT meet promotion criteria")
+        notify_email("❌ Model Promotion Skipped", f"Model {MODEL_NAME} v{version} skipped.")
         return "skip_promotion"
 
 # -----------------------
 # DAG Definition
 # -----------------------
 with DAG(
-    dag_id="train_model_with_mlflow",
+    dag_id="train_pipeline_dag",
     default_args=default_args,
     start_date=datetime(2025, 8, 1),
     schedule_interval="@weekly",
@@ -184,31 +168,27 @@ with DAG(
     tags=["mlflow", "training", "promotion"],
 ) as dag:
 
-    # 0️⃣ Download tuned params from GCS
-    download_best_params = BashOperator(
-        task_id="download_best_params",
+    download_artifacts = BashOperator(
+        task_id="download_artifacts",
         bash_command=(
+            f"if [ -f {BEST_PARAMS_PATH} ]; then "
+            "  echo '✅ Using existing best_xgb_params.json'; "
+            "else "
+            "  gcloud auth activate-service-account "
+            "  --key-file=/opt/airflow/keys/gcs-service-account.json && "
+            f"  gsutil cp gs://{GCS_BUCKET}/artifacts/best_xgb_params.json {BEST_PARAMS_PATH} || echo '⚠️ No best_xgb_params.json found'; "
+            "fi; "
             "gcloud auth activate-service-account "
             "--key-file=/opt/airflow/keys/gcs-service-account.json && "
-            f"gsutil cp gs://{os.getenv('GCS_BUCKET', 'loan-default-artifacts-loan-default-mlops')}/artifacts/best_xgb_params.json "
-            f"{BEST_PARAMS_PATH} || echo '⚠️ No best_xgb_params.json found in GCS, continuing with defaults.'"
+            f"gsutil cp gs://{GCS_BUCKET}/artifacts/optuna_study.db {OPTUNA_DB_PATH} || echo '⚠️ No optuna_study.db found'"
         ),
         cwd="/opt/airflow",
     )
 
-    # 1️⃣ Train model on Vertex AI
-    train_model = PythonOperator(
-        task_id="train_model",
-        python_callable=submit_vertex_job,
-    )
+    train_model = PythonOperator(task_id="train_model", python_callable=submit_vertex_job)
 
-    # 2️⃣ Decide promotion
-    decide = BranchPythonOperator(
-        task_id="decide_promotion",
-        python_callable=decide_promotion,
-    )
-
-    # 3a️⃣ Trigger promotion DAG
+    decide = BranchPythonOperator(task_id="decide_promotion", python_callable=decide_promotion)
+    
     trigger_promotion = TriggerDagRunOperator(
         task_id="trigger_promotion",
         trigger_dag_id="promote_model_dag",
@@ -222,28 +202,20 @@ with DAG(
         },
         wait_for_completion=False,
     )
-
-    # 3b️⃣ Skip promotion
+    
     skip_promotion = EmptyOperator(task_id="skip_promotion")
-
-    # 4️⃣ Join after promotion
+    
     join_after_promotion = EmptyOperator(
         task_id="join_after_promotion",
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
     )
-
-    # 5️⃣ Trigger batch prediction
+ 
     trigger_batch_prediction = TriggerDagRunOperator(
         task_id="trigger_batch_prediction",
         trigger_dag_id="batch_prediction_dag",
         wait_for_completion=False,
     )
 
-    # Flow
-    download_best_params >> train_model >> decide
+    download_artifacts >> train_model >> decide
     decide >> [trigger_promotion, skip_promotion]
-    (
-        [trigger_promotion, skip_promotion]
-        >> join_after_promotion
-        >> trigger_batch_prediction
-    )
+    [trigger_promotion, skip_promotion] >> join_after_promotion >> trigger_batch_prediction
