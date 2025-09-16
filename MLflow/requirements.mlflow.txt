@@ -1,0 +1,5 @@
+mlflow[extras]==2.14.1
+gunicorn
+psycopg2-binary     # if you want Postgres backend
+google-cloud-storage
+boto3               # optional, if S3 artifact store is ever needed

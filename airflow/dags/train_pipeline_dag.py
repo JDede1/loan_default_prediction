@@ -12,6 +12,7 @@ import os
 import requests
 from airflow.utils.email import send_email
 from google.cloud import aiplatform
+import subprocess
 
 # -----------------------
 # Defaults
@@ -82,11 +83,14 @@ def submit_vertex_job(**kwargs):
     image_uri = Variable.get("TRAINER_IMAGE_URI", default_var=os.getenv("TRAINER_IMAGE_URI", ""))
     staging_bucket = f"gs://{GCS_BUCKET}"
 
+    # Unique run prefix for this training
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_prefix = f"vertex_runs/{timestamp}"
+
     print(f"🚀 Submitting Vertex AI job with image: {image_uri}")
     print(f"   Project={project}, Region={region}, Staging Bucket={staging_bucket}")
     print(f"   Data Path={TRAIN_DATA_PATH}, Params Path={BEST_PARAMS_PATH}")
-    print(f"   MLflow Tracking URI={MLFLOW_TRACKING_URI}")
-    print(f"   MLflow Artifact URI={MLFLOW_ARTIFACT_URI}")
+    print(f"   Run prefix={run_prefix}")
 
     aiplatform.init(project=project, location=region, staging_bucket=staging_bucket)
 
@@ -106,11 +110,8 @@ def submit_vertex_job(**kwargs):
                 ],
                 "env": [
                     {"name": "VERTEX_AI_TRAINING", "value": "1"},
-                    {"name": "MLFLOW_TRACKING_URI", "value": MLFLOW_TRACKING_URI},
-                    {"name": "MLFLOW_ARTIFACT_URI", "value": MLFLOW_ARTIFACT_URI}, # artifacts in GCS
+                    {"name": "RUN_PREFIX", "value": run_prefix},
                     {"name": "GCS_BUCKET", "value": GCS_BUCKET},
-                    {"name": "TRAIN_DATA_PATH", "value": TRAIN_DATA_PATH},
-                    {"name": "BEST_PARAMS_PATH", "value": BEST_PARAMS_PATH},
                 ],
             },
         }],
@@ -118,6 +119,29 @@ def submit_vertex_job(**kwargs):
 
     job.run(sync=True)
     print("✅ Vertex AI training job completed.")
+
+    # Push run_prefix to XCom for ingestion
+    kwargs["ti"].xcom_push(key="run_prefix", value=run_prefix)
+
+# -----------------------
+# Ingest Vertex outputs into MLflow
+# -----------------------
+def ingest_vertex_outputs(**kwargs):
+    run_prefix = kwargs['ti'].xcom_pull(task_ids='train_model', key='run_prefix')
+    if not run_prefix:
+        raise ValueError("❌ No run_prefix found in XCom from train_model")
+
+    cmd = [
+        "python", "/opt/airflow/src/ingest_vertex_run.py",
+        "--gcs_bucket", GCS_BUCKET,
+        "--run_prefix", run_prefix,
+        "--model_name", MODEL_NAME,
+        "--alias", FROM_ALIAS,
+    ]
+    print(f"🚀 Running ingestion: {' '.join(cmd)}")
+    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    print(result.stdout)
+    print(result.stderr)
 
 # -----------------------
 # Branch: decide whether to promote
@@ -185,7 +209,17 @@ with DAG(
         cwd="/opt/airflow",
     )
 
-    train_model = PythonOperator(task_id="train_model", python_callable=submit_vertex_job)
+    train_model = PythonOperator(
+        task_id="train_model",
+        python_callable=submit_vertex_job,
+        provide_context=True,
+    )
+
+    ingest_vertex = PythonOperator(
+        task_id="ingest_vertex_run",
+        python_callable=ingest_vertex_outputs,
+        provide_context=True,
+    )
 
     decide = BranchPythonOperator(task_id="decide_promotion", python_callable=decide_promotion)
     
@@ -216,6 +250,6 @@ with DAG(
         wait_for_completion=False,
     )
 
-    download_artifacts >> train_model >> decide
+    download_artifacts >> train_model >> ingest_vertex >> decide
     decide >> [trigger_promotion, skip_promotion]
     [trigger_promotion, skip_promotion] >> join_after_promotion >> trigger_batch_prediction

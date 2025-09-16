@@ -1,5 +1,5 @@
 # ============================
-# Dockerfile.airflow (final)
+# Dockerfile.airflow 
 # ============================
 # Base: official Apache Airflow image (includes Airflow + entrypoints)
 FROM apache/airflow:2.9.3-python3.11

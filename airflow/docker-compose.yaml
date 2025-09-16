@@ -3,9 +3,9 @@ name: airflow
 volumes:
   postgres-db-volume:
   airflow-logs:
-  mlflow-runs:
   airflow-artifacts:
   airflow-tmp:
+  mlflow-data:   # ✅ MLflow metadata DB
 
 networks:
   airflow:
@@ -78,7 +78,7 @@ services:
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json
       - ../requirements.serve.txt:/opt/airflow/requirements.serve.txt
       - ./artifacts:/opt/airflow/artifacts
-      - ../airflow/variables.json:/opt/airflow/variables.json   
+      - ../airflow/variables.json:/opt/airflow/variables.json
       - airflow-tmp:/opt/airflow/tmp
     ports:
       - "8080:8080"
@@ -114,7 +114,7 @@ services:
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json
       - ../requirements.serve.txt:/opt/airflow/requirements.serve.txt
       - ./artifacts:/opt/airflow/artifacts
-      - ../airflow/variables.json:/opt/airflow/variables.json  
+      - ../airflow/variables.json:/opt/airflow/variables.json
       - airflow-tmp:/opt/airflow/tmp
     command: ["airflow", "scheduler"]
     networks: [airflow]
@@ -127,10 +127,13 @@ services:
       mlflow server
       --host 0.0.0.0
       --port 5000
-      --backend-store-uri sqlite:///mlflow.db
-      --default-artifact-root /mlruns
+      --backend-store-uri sqlite:///mlflow-data/mlflow.db
+      --default-artifact-root gs://loan-default-artifacts-loan-default-mlops/mlflow
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
     volumes:
-      - mlflow-runs:/mlruns
+      - mlflow-data:/mlflow-data   
+      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     ports:
       - "5000:5000"
     networks: [airflow]

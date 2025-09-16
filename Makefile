@@ -2,7 +2,7 @@
 	terraform-init terraform-plan terraform-apply terraform-destroy integration-tests \
 	fix-perms reset-logs bootstrap clean-disk clean-light stop-hard backup-airflow restore-airflow \
 	reset fresh-reset restart-webserver restart-serve reset-vars verify \
-	gcloud-auth build-trainer push-trainer trainer
+	gcloud-auth build-trainer push-trainer trainer build-mlflow bootstrap-all
 
 # === Python/Dev Setup ===
 install:
@@ -278,6 +278,14 @@ set-trainer-image:
 		airflow variables set TRAINER_IMAGE_URI ${TRAINER_IMAGE}
 	@echo "✅ Airflow variable TRAINER_IMAGE_URI set to ${TRAINER_IMAGE}"
 
+# === Build MLflow Custom Image ===
+build-mlflow:
+	docker build -f MLflow/Dockerfile.mlflow -t loan-default-mlflow:latest MLflow
+	@echo "✅ MLflow image built: loan-default-mlflow:latest"
+
+# === Full Bootstrap after clean-disk ===
+bootstrap-all: fix-perms build-mlflow trainer fresh-reset verify
+	@echo "🚀 Full stack rebuilt and verified after clean-disk."
 
 # === Generate Airflow Variables from .env ===
 export-env-vars:

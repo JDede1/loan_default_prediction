@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import socket
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import mlflow
@@ -21,6 +22,9 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
+
+# Optional: only needed for Vertex uploads
+from google.cloud import storage
 
 
 # -----------------------
@@ -50,11 +54,7 @@ mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 mlflow_artifact_uri = os.getenv("MLFLOW_ARTIFACT_URI", f"gs://{GCS_BUCKET}/mlflow")
 vertex_training = os.getenv("VERTEX_AI_TRAINING", "0") == "1"
 
-if vertex_training:
-    # ✅ Vertex AI: use MLflow server for registry + metrics, GCS for artifacts
-    print(f"✅ Vertex AI mode. Registry+Metrics → {mlflow_tracking_uri}, Artifacts → {mlflow_artifact_uri}")
-    mlflow.set_tracking_uri(mlflow_tracking_uri)
-else:
+if not vertex_training:
     # ✅ Local Airflow / Docker
     if mlflow_tracking_uri and "http://mlflow:5000" in mlflow_tracking_uri:
         if is_host_reachable("mlflow", 5000):
@@ -69,14 +69,17 @@ else:
 EXPERIMENT_NAME = "loan_default_experiment"
 client = MlflowClient()
 
-experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
-if experiment is None:
-    experiment_id = client.create_experiment(
-        EXPERIMENT_NAME,
-        artifact_location=mlflow_artifact_uri,  # ✅ always GCS artifacts
-    )
+if not vertex_training:
+    experiment = client.get_experiment_by_name(EXPERIMENT_NAME)
+    if experiment is None:
+        experiment_id = client.create_experiment(
+            EXPERIMENT_NAME,
+            artifact_location=mlflow_artifact_uri,  # ✅ always GCS artifacts
+        )
+    else:
+        experiment_id = experiment.experiment_id
 else:
-    experiment_id = experiment.experiment_id
+    experiment_id = None  # Vertex mode skips MLflow
 
 
 # -----------------------
@@ -130,62 +133,7 @@ def evaluate_model(model, X_test, y_test):
 
 
 # -----------------------
-# Plot Helpers
-# -----------------------
-def save_plot_safely(fig, filename):
-    tmp_path = os.path.join(TMP_ARTIFACT_DIR, os.path.basename(filename))
-    fig.savefig(tmp_path)
-    plt.close(fig)
-    try:
-        shutil.copy2(tmp_path, filename)
-        return filename
-    except PermissionError:
-        print(f"⚠️ Permission denied writing {filename}. Using temp file instead.")
-        return tmp_path
-
-
-def save_feature_importance_plot(model, feature_names, filename):
-    importances = model.feature_importances_
-    sorted_idx = np.argsort(importances)[::-1][:10]
-    top_features = [feature_names[i] for i in sorted_idx]
-    top_importances = importances[sorted_idx]
-
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.barh(top_features[::-1], top_importances[::-1])
-    ax.set_xlabel("Importance")
-    ax.set_title("Top 10 Feature Importances")
-    plt.tight_layout()
-    return save_plot_safely(fig, filename)
-
-
-def save_roc_curve_plot(y_test, y_proba, filename):
-    fpr, tpr, _ = roc_curve(y_test, y_proba)
-    auc_score = roc_auc_score(y_test, y_proba)
-
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.plot(fpr, tpr, label=f"AUC = {auc_score:.2f}")
-    ax.plot([0, 1], [0, 1], linestyle="--", color="gray")
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate")
-    ax.set_title("ROC Curve")
-    ax.legend()
-    ax.grid(True)
-    plt.tight_layout()
-    return save_plot_safely(fig, filename)
-
-
-def save_confusion_matrix_plot(y_test, y_pred, filename):
-    cm = confusion_matrix(y_test, y_pred)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
-    fig, ax = plt.subplots()
-    disp.plot(cmap=plt.cm.Blues, ax=ax)
-    ax.set_title("Confusion Matrix")
-    plt.tight_layout()
-    return save_plot_safely(fig, filename)
-
-
-# -----------------------
-# MLflow Logging
+# MLflow Logging (Local/Docker)
 # -----------------------
 def log_and_register_model(
     model,
@@ -222,36 +170,49 @@ def log_and_register_model(
             ],
         )
 
-        plot_paths = []
-        if feature_names is not None:
-            plot_paths.append(
-                save_feature_importance_plot(
-                    model, feature_names, os.path.join(ARTIFACT_DIR, "feature_importance.png")
-                )
-            )
-        y_pred = model.predict(X_test)
-        y_proba = model.predict_proba(X_test)[:, 1]
-        plot_paths.append(
-            save_roc_curve_plot(y_test, y_proba, os.path.join(ARTIFACT_DIR, "roc_curve.png"))
-        )
-        plot_paths.append(
-            save_confusion_matrix_plot(y_test, y_pred, os.path.join(ARTIFACT_DIR, "confusion_matrix.png"))
-        )
-
-        for path in plot_paths:
-            mlflow.log_artifact(path, artifact_path="artifacts")
-
-        try:
-            mlflow.log_artifacts(ARTIFACT_DIR, artifact_path="artifacts")
-        except PermissionError:
-            print(f"⚠️ Skipped logging from {ARTIFACT_DIR} due to permissions.")
-
         if alias:
             latest_version = client.get_latest_versions(model_name, stages=[])[0].version
             client.set_registered_model_alias(
                 name=model_name, alias=alias.lower(), version=latest_version
             )
             print(f"Assigned alias '{alias}' to version {latest_version}")
+
+
+# -----------------------
+# Vertex AI Save (Option B branch)
+# -----------------------
+def save_to_gcs(model, metrics, params, gcs_bucket):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_prefix = f"vertex_runs/{timestamp}"
+
+    client = storage.Client()
+    bucket = client.bucket(gcs_bucket)
+
+    # Save metrics
+    metrics_path = "/tmp/metrics.json"
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f, indent=2)
+    bucket.blob(f"{run_prefix}/metrics.json").upload_from_filename(metrics_path)
+
+    # Save params
+    params_path = "/tmp/params.json"
+    with open(params_path, "w") as f:
+        json.dump(params, f, indent=2)
+    bucket.blob(f"{run_prefix}/params.json").upload_from_filename(params_path)
+
+    # Save model locally and upload dir
+    local_model_dir = "/tmp/model"
+    if os.path.exists(local_model_dir):
+        shutil.rmtree(local_model_dir)
+    mlflow.xgboost.save_model(model, path=local_model_dir)
+
+    for root, _, files in os.walk(local_model_dir):
+        for file in files:
+            full_path = os.path.join(root, file)
+            rel_path = os.path.relpath(full_path, local_model_dir)
+            bucket.blob(f"{run_prefix}/model/{rel_path}").upload_from_filename(full_path)
+
+    print(f"✅ Vertex outputs saved to gs://{gcs_bucket}/{run_prefix}")
 
 
 # -----------------------
@@ -278,17 +239,22 @@ def main(args):
     metrics = evaluate_model(model, X_test, y_test)
     params_used["model_type"] = "xgboost"
 
-    log_and_register_model(
-        model,
-        X_test,
-        y_test,
-        metrics,
-        params_used,
-        model_name=args.model_name,
-        alias=args.alias,
-        feature_names=feature_names,
-        experiment_id=experiment_id,
-    )
+    if vertex_training:
+        print("☁️ Vertex mode: skipping MLflow, saving to GCS only")
+        save_to_gcs(model, metrics, params_used, GCS_BUCKET)
+    else:
+        print("💻 Local/Docker mode: logging to MLflow")
+        log_and_register_model(
+            model,
+            X_test,
+            y_test,
+            metrics,
+            params_used,
+            model_name=args.model_name,
+            alias=args.alias,
+            feature_names=feature_names,
+            experiment_id=experiment_id,
+        )
 
 
 if __name__ == "__main__":

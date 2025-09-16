@@ -1,0 +1,28 @@
+# Use a lightweight Python base
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    MLFLOW_HOME=/mlflow
+
+# Install system deps (for psycopg2, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install
+WORKDIR ${MLFLOW_HOME}
+COPY ../requirements.mlflow.txt ./requirements.mlflow.txt
+RUN pip install --no-cache-dir -r requirements.mlflow.txt
+
+# Copy entrypoint script
+COPY tracking_entrypoint.sh /usr/local/bin/tracking_entrypoint.sh
+RUN chmod +x /usr/local/bin/tracking_entrypoint.sh
+
+# Expose MLflow default port
+EXPOSE 5000
+
+# Run MLflow tracking server
+ENTRYPOINT ["/usr/local/bin/tracking_entrypoint.sh"]
