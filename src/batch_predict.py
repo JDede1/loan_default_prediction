@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import shutil
 from datetime import datetime
@@ -139,7 +140,24 @@ def main(args):
         print("ℹ️ Not running inside Airflow — skipping Variable.set()")
 
     # ---------------------------
-    # 7. Summary
+    # 7. Write marker file (always as fallback)
+    # ---------------------------
+    marker_file = os.path.join(ARTIFACT_DIR, "latest_prediction.json")
+    marker_data = {
+        "LATEST_PREDICTION_PATH": saved_path,
+        "created_at": datetime.now().isoformat(),
+        "model_name": args.model_name,
+        "alias": args.alias,
+    }
+    try:
+        with open(marker_file, "w") as f:
+            json.dump(marker_data, f, indent=2)
+        print(f"📌 Marker file written: {marker_file}")
+    except Exception as e:
+        print(f"⚠️ Could not write marker file: {e}")
+
+    # ---------------------------
+    # 8. Summary
     # ---------------------------
     print(f"\n📌 Batch prediction completed for {len(df)} records.")
     print(f"📁 Final output file: {saved_path}")

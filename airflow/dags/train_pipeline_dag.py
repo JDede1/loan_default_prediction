@@ -20,7 +20,7 @@ import subprocess
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
-    "retries": 1,
+    "retries": 0,
     "retry_delay": timedelta(minutes=2),
 }
 
@@ -139,9 +139,15 @@ def ingest_vertex_outputs(**kwargs):
         "--alias", FROM_ALIAS,
     ]
     print(f"🚀 Running ingestion: {' '.join(cmd)}")
-    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-    print(result.stdout)
-    print(result.stderr)
+
+    env = os.environ.copy()
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+    print("STDOUT:\n", result.stdout)
+    print("STDERR:\n", result.stderr)
+
+    if result.returncode != 0:
+        raise RuntimeError(f"❌ Ingestion failed with code {result.returncode}")
 
 # -----------------------
 # Branch: decide whether to promote

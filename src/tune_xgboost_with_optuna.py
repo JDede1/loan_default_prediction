@@ -73,7 +73,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output_params",
-        default=os.getenv("BEST_PARAMS_PATH", "/opt/airflow/artifacts/best_xgb_params.json"),
+        default=os.getenv(
+            "BEST_PARAMS_PATH", "/opt/airflow/artifacts/best_xgb_params.json"
+        ),
         help="Where to save best parameters JSON (can be gs:// path).",
     )
     args = parser.parse_args()

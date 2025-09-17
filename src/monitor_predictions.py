@@ -10,14 +10,12 @@ from evidently.metric_preset import DataDriftPreset, TargetDriftPreset
 from evidently.pipeline.column_mapping import ColumnMapping
 from evidently.report import Report
 
-# Phase 2 imports
 try:
     from airflow.models import Variable
 except ImportError:
-    Variable = None  # Allow running outside Airflow
+    Variable = None
 
 from google.cloud import storage
-
 
 # =========================
 # Paths & constants
@@ -26,7 +24,6 @@ BASE_DIR = "/opt/airflow"
 ARTIFACT_DIR = os.path.join(BASE_DIR, "artifacts")
 TMP_ARTIFACT_DIR = "/tmp/artifacts"
 
-# Ensure dirs exist
 os.makedirs(ARTIFACT_DIR, exist_ok=True)
 os.makedirs(TMP_ARTIFACT_DIR, exist_ok=True)
 
@@ -35,7 +32,6 @@ os.makedirs(TMP_ARTIFACT_DIR, exist_ok=True)
 # Helpers
 # =========================
 def list_prediction_files(directories: List[str]) -> List[str]:
-    """Return a sorted (newest-first) list of predictions_*.csv across given directories."""
     found = []
     for d in directories:
         try:
@@ -48,11 +44,11 @@ def list_prediction_files(directories: List[str]) -> List[str]:
 
 
 def get_latest_prediction_file() -> str:
-    """Find the newest predictions file from artifacts or tmp."""
     candidates = list_prediction_files([ARTIFACT_DIR, TMP_ARTIFACT_DIR])
     if not candidates:
         raise FileNotFoundError(
-            f"❌ No batch prediction files found in {ARTIFACT_DIR} or {TMP_ARTIFACT_DIR}."
+            "❌ No batch prediction files found in "
+            f"{ARTIFACT_DIR} or {TMP_ARTIFACT_DIR}."
         )
     latest = candidates[0]
     print(f"✅ Using latest batch predictions: {latest}")
@@ -60,7 +56,6 @@ def get_latest_prediction_file() -> str:
 
 
 def safe_write_bytes(path: str, data: bytes) -> str:
-    """Try writing to ARTIFACT_DIR first, fallback to TMP if permissions fail."""
     tmp_name = os.path.join(TMP_ARTIFACT_DIR, f"tmp_{os.path.basename(path)}")
     with open(tmp_name, "wb") as f:
         f.write(data)
@@ -78,7 +73,6 @@ def safe_write_text(path: str, text: str) -> str:
 
 
 def upload_to_gcs(local_path: str, bucket_name: str, destination_blob: str):
-    """Upload a file to GCS."""
     print(f"📤 Uploading {local_path} to gs://{bucket_name}/{destination_blob}")
     client = storage.Client()
     bucket = client.bucket(bucket_name)
@@ -88,21 +82,24 @@ def upload_to_gcs(local_path: str, bucket_name: str, destination_blob: str):
 
 
 def read_csv_maybe_gcs(path: str) -> pd.DataFrame:
-    """Read CSV from local path or gs:// URI."""
     if path.startswith("gs://"):
         return pd.read_csv(path, storage_options={"token": "google_default"})
     return pd.read_csv(path)
 
 
 def notify_slack(message: str):
-    """Send a message to Slack if webhook is configured."""
     url = os.getenv("SLACK_WEBHOOK_URL", "")
     if not url:
         return
     try:
         import requests
-        requests.post(url, headers={"Content-Type": "application/json"},
-                      data=json.dumps({"text": message}), timeout=10)
+
+        requests.post(
+            url,
+            headers={"Content-Type": "application/json"},
+            data=json.dumps({"text": message}),
+            timeout=10,
+        )
     except Exception as e:
         print(f"⚠️ Slack notify failed: {e}")
 
@@ -117,7 +114,6 @@ def main(args):
     train_data_path = args.train_data_path or os.getenv("TRAIN_DATA_PATH")
     prediction_path = args.prediction_path
 
-    # Fallback to Airflow Variables if needed
     if not train_data_path and Variable:
         try:
             train_data_path = Variable.get("TRAIN_DATA_PATH", default_var="")
@@ -135,8 +131,10 @@ def main(args):
         prediction_path = get_latest_prediction_file()
 
     if not train_data_path or not prediction_path:
-        msg = (f"❌ Missing paths: TRAIN_DATA_PATH={train_data_path}, "
-               f"PREDICTION_PATH={prediction_path}")
+        msg = (
+            f"❌ Missing paths: TRAIN_DATA_PATH={train_data_path}, "
+            f"PREDICTION_PATH={prediction_path}"
+        )
         notify_slack(msg)
         raise ValueError(msg)
 
@@ -177,7 +175,6 @@ def main(args):
 
     train_df = train_df[common_cols]
     batch_df = batch_df[common_cols]
-    print(f"✅ Aligned on {len(common_cols)} columns")
 
     # --------------------
     # Run Evidently
@@ -187,8 +184,9 @@ def main(args):
     column_mapping.target = TARGET_COL
 
     report = Report(metrics=[DataDriftPreset(), TargetDriftPreset()])
-    report.run(reference_data=train_df, current_data=batch_df,
-               column_mapping=column_mapping)
+    report.run(
+        reference_data=train_df, current_data=batch_df, column_mapping=column_mapping
+    )
 
     # --------------------
     # Save reports
@@ -218,24 +216,71 @@ def main(args):
         upload_to_gcs(final_html_path, gcs_bucket, dest_html)
 
     # --------------------
-    # Optional: Log to MLflow
+    # Drift Threshold Check
     # --------------------
-    try:
-        import mlflow
-        mlflow.log_dict(report.as_dict(), "monitoring/report.json")
-        print("✅ Monitoring report also logged to MLflow")
-    except Exception as e:
-        print(f"⚠️ Skipped MLflow logging: {e}")
+    drift_share = (
+        report.as_dict().get("metrics", [])[0].get("result", {}).get("drift_share", 0)
+    )
+    threshold = float(
+        os.getenv(
+            "DRIFT_THRESHOLD",
+            Variable.get("DRIFT_THRESHOLD", default_var="0.3") if Variable else 0.3,
+        )
+    )
+    drift_detected = drift_share > threshold
+
+    msg = (
+        f"📊 Drift share={drift_share:.2f}, "
+        f"threshold={threshold:.2f} → drift={drift_detected}"
+    )
+    notify_slack(msg)
+    print(msg)
+
+    # --------------------
+    # Save drift decision JSON if requested
+    # --------------------
+    if args.status_out:
+        status = {
+            "drift": drift_detected,
+            "drift_share": drift_share,
+            "threshold": threshold,
+        }
+        with open(args.status_out, "w") as f:
+            json.dump(status, f, indent=2)
+        print(f"📝 Drift status written to {args.status_out}: {status}")
+
+        # ✅ Also store path in Airflow Variable for visibility
+        if Variable:
+            try:
+                Variable.set("LATEST_DRIFT_REPORT_PATH", args.status_out)
+                print(
+                    "📌 Airflow Variable LATEST_DRIFT_REPORT_PATH "
+                    f"set to: {args.status_out}"
+                )
+            except Exception as e:
+                print(f"⚠️ Could not set Airflow Variable: {e}")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run Evidently monitoring on training vs prediction data"
     )
-    parser.add_argument("--train_data_path", type=str,
-                        help="Path to training data (CSV). Supports gs:// paths.")
-    parser.add_argument("--prediction_path", type=str,
-                        help="Path to prediction data (CSV). Supports gs:// paths.")
+    parser.add_argument(
+        "--train_data_path",
+        type=str,
+        help="Path to training data (CSV). Supports gs:// paths.",
+    )
+    parser.add_argument(
+        "--prediction_path",
+        type=str,
+        help="Path to prediction data (CSV). Supports gs:// paths.",
+    )
+    parser.add_argument(
+        "--status_out",
+        type=str,
+        default=None,
+        help="Optional path to save drift decision JSON",
+    )
     args = parser.parse_args()
 
     main(args)

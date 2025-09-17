@@ -5,7 +5,7 @@ volumes:
   airflow-logs:
   airflow-artifacts:
   airflow-tmp:
-  mlflow-data:   # ✅ MLflow metadata DB
+  mlflow-data:   # still used for artifacts cache
 
 networks:
   airflow:
@@ -41,16 +41,19 @@ services:
     environment:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres/${POSTGRES_DB:-airflow}
     command: >
-      bash -c "airflow db migrate && bash /opt/airflow/create_airflow_user.sh"
+      bash -c "airflow db migrate &&
+               airflow variables import /opt/airflow/variables.json &&
+               bash /opt/airflow/create_airflow_user.sh"
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
-      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json  # mount key file only
+      - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json
       - ./artifacts:/opt/airflow/artifacts
       - ../airflow/create_airflow_user.sh:/opt/airflow/create_airflow_user.sh
+      - ../airflow/variables.json:/opt/airflow/variables.json
       - airflow-tmp:/opt/airflow/tmp
     networks: [airflow]
     restart: "no"
@@ -121,23 +124,27 @@ services:
     restart: unless-stopped
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v3.1.4
+    build:
+      context: ../MLflow
+      dockerfile: Dockerfile.mlflow
+    image: loan-default-mlflow:latest   # ✅ custom built image
     container_name: mlflow
-    command: >
-      mlflow server
-      --host 0.0.0.0
-      --port 5000
-      --backend-store-uri sqlite:///mlflow-data/mlflow.db
-      --default-artifact-root gs://loan-default-artifacts-loan-default-mlops/mlflow
     environment:
+      BACKEND_URI: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres/mlflow
+      ARTIFACT_ROOT: gs://loan-default-artifacts-loan-default-mlops/mlflow
       GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
     volumes:
-      - mlflow-data:/mlflow-data   
+      - mlflow-data:/mlflow-data
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     ports:
       - "5000:5000"
     networks: [airflow]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5000"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   serve:
     build:

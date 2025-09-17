@@ -9,6 +9,9 @@ import matplotlib.pyplot as plt
 import mlflow
 import numpy as np
 import pandas as pd
+
+# Optional: only needed for Vertex uploads
+from google.cloud import storage
 from mlflow.models.signature import infer_signature
 from mlflow.tracking import MlflowClient
 from sklearn.metrics import (
@@ -22,10 +25,6 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier
-
-# Optional: only needed for Vertex uploads
-from google.cloud import storage
-
 
 # -----------------------
 # Constants
@@ -133,6 +132,51 @@ def evaluate_model(model, X_test, y_test):
 
 
 # -----------------------
+# Artifact Logging
+# -----------------------
+def log_artifacts(model, X_test, y_test, run_id, feature_names):
+    artifact_dir = os.path.join(TMP_ARTIFACT_DIR, f"artifacts_{run_id}")
+    os.makedirs(artifact_dir, exist_ok=True)
+
+    # ROC curve
+    y_proba = model.predict_proba(X_test)[:, 1]
+    fpr, tpr, _ = roc_curve(y_test, y_proba)
+    plt.figure()
+    plt.plot(fpr, tpr, label="ROC curve")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve")
+    plt.legend()
+    roc_path = os.path.join(artifact_dir, "roc_curve.png")
+    plt.savefig(roc_path)
+    plt.close()
+
+    # Confusion matrix
+    y_pred = model.predict(X_test)
+    cm = confusion_matrix(y_test, y_pred)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+    disp.plot()
+    cm_path = os.path.join(artifact_dir, "confusion_matrix.png")
+    plt.savefig(cm_path)
+    plt.close()
+
+    # Feature importance
+    importance = model.feature_importances_
+    sorted_idx = np.argsort(importance)[::-1]
+    plt.figure(figsize=(10, 6))
+    plt.bar(range(len(importance)), importance[sorted_idx], align="center")
+    plt.xticks(range(len(importance)), np.array(feature_names)[sorted_idx], rotation=90)
+    plt.title("Feature Importance")
+    fi_path = os.path.join(artifact_dir, "feature_importance.png")
+    plt.tight_layout()
+    plt.savefig(fi_path)
+    plt.close()
+
+    # Log everything under one folder in MLflow (→ goes to GCS)
+    mlflow.log_artifacts(artifact_dir)
+
+
+# -----------------------
 # MLflow Logging (Local/Docker)
 # -----------------------
 def log_and_register_model(
@@ -170,8 +214,13 @@ def log_and_register_model(
             ],
         )
 
+        # Log additional artifacts (ROC, CM, Feature importance)
+        log_artifacts(model, X_test, y_test, run_id, feature_names)
+
         if alias:
-            latest_version = client.get_latest_versions(model_name, stages=[])[0].version
+            latest_version = client.get_latest_versions(model_name, stages=[])[
+                0
+            ].version
             client.set_registered_model_alias(
                 name=model_name, alias=alias.lower(), version=latest_version
             )
@@ -182,8 +231,12 @@ def log_and_register_model(
 # Vertex AI Save (Option B branch)
 # -----------------------
 def save_to_gcs(model, metrics, params, gcs_bucket):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_prefix = f"vertex_runs/{timestamp}"
+    # 👇 Use DAG-provided run prefix if available
+    run_prefix = os.getenv("RUN_PREFIX")
+    if not run_prefix:
+        # fallback if RUN_PREFIX not provided
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_prefix = f"vertex_runs/{timestamp}"
 
     client = storage.Client()
     bucket = client.bucket(gcs_bucket)
@@ -200,7 +253,7 @@ def save_to_gcs(model, metrics, params, gcs_bucket):
         json.dump(params, f, indent=2)
     bucket.blob(f"{run_prefix}/params.json").upload_from_filename(params_path)
 
-    # Save model locally and upload dir
+    # Save model
     local_model_dir = "/tmp/model"
     if os.path.exists(local_model_dir):
         shutil.rmtree(local_model_dir)
@@ -210,7 +263,9 @@ def save_to_gcs(model, metrics, params, gcs_bucket):
         for file in files:
             full_path = os.path.join(root, file)
             rel_path = os.path.relpath(full_path, local_model_dir)
-            bucket.blob(f"{run_prefix}/model/{rel_path}").upload_from_filename(full_path)
+            bucket.blob(f"{run_prefix}/model/{rel_path}").upload_from_filename(
+                full_path
+            )
 
     print(f"✅ Vertex outputs saved to gs://{gcs_bucket}/{run_prefix}")
 
@@ -227,7 +282,9 @@ def main(args):
         if args.params_path.startswith("gs://"):
             try:
                 print(f"☁️ Fetching tuned params from GCS: {args.params_path}")
-                tuned_params = pd.read_json(args.params_path, lines=True).iloc[0].to_dict()
+                tuned_params = (
+                    pd.read_json(args.params_path, lines=True).iloc[0].to_dict()
+                )
             except Exception as e:
                 print(f"⚠️ Could not load tuned params from GCS: {e}")
         elif os.path.exists(args.params_path):
