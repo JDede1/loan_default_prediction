@@ -25,6 +25,7 @@ ENV/
 # ==========================
 .env
 *.env
+.env.ci
 keys/
 airflow/keys/
 JSON Key/                # rare local folder name some users create
@@ -109,4 +110,4 @@ htmlcov/
 # ==========================
 predictions_*.csv
 
-best_xgb_params.json
+best_xgb_params.json.env.ci
