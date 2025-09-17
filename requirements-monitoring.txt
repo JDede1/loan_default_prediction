@@ -1,5 +1,10 @@
 # requirements-monitoring.txt
-evidently==0.3.2.1
+# Monitoring environment (Evidently + core ML stack)
+
+# Evidently (Pydantic v2 compatible)
+evidently>=0.4.0
+
+# Core scientific/ML stack
 pandas==1.5.3
 numpy==1.24.4
 scikit-learn==1.2.2
