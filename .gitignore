@@ -110,4 +110,4 @@ htmlcov/
 # ==========================
 predictions_*.csv
 
-best_xgb_params.json.env.ci
+best_xgb_params.json
