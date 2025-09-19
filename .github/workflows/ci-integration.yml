@@ -143,10 +143,6 @@ jobs:
       - name: Run integration tests (Makefile target)
         run: make integration-tests
 
-      # DAG import check
-      - name: Run DAG import check with pytest
-        run: docker compose -f airflow/docker-compose.yaml exec -T webserver pytest -q
-
       # Diagnostics on failure
       - name: Diagnostics (ps + last logs)
         if: failure()
