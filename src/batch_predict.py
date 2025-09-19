@@ -67,10 +67,12 @@ def main(args):
     print(f"Output path (base): {args.output_path}")
 
     # ---------------------------
-    # 0. Configure MLflow tracking (critical for registry resolution)
+    # 0. Configure MLflow tracking & artifact store
     # ---------------------------
     mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    mlflow_artifact_uri = os.getenv("MLFLOW_ARTIFACT_URI", "file:/opt/airflow/mlruns")
     print(f"🔗 Using MLflow Tracking URI: {mlflow_tracking_uri}")
+    print(f"📦 Using MLflow Artifact URI: {mlflow_artifact_uri}")
     mlflow.set_tracking_uri(mlflow_tracking_uri)
 
     # ---------------------------

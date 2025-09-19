@@ -135,6 +135,10 @@ jobs:
               --data_path /opt/airflow/data/loan_default_selected_features_clean.csv \
               --model_name loan_default_model --alias staging
 
+      # ✅ Start Serve before integration tests
+      - name: Start Serve
+        run: docker compose --env-file .env -f airflow/docker-compose.yaml up -d serve
+
       # Run integration tests (Makefile target)
       - name: Run integration tests (Makefile target)
         run: make integration-tests

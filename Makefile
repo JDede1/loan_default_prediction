@@ -49,7 +49,7 @@ stop-core:
 stop-hard: down
 	-$(MAKE) backup-airflow
 	docker system prune -a -f --volumes
-	sudo rm -rf airflow/logs/* mlruns/* || true
+	sudo rm -rf airflow/logs/* mlruns/* artifacts/* || true
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	df -h /
 
@@ -150,6 +150,7 @@ integration-tests: create-mlflow-db fix-mlflow-volume
 		-e MLFLOW_ARTIFACT_URI=$${MLFLOW_ARTIFACT_URI:-file:/opt/airflow/mlruns} \
 		-e GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json \
 		webserver bash -c "pip install -r /opt/airflow/requirements-dev.txt && pytest /opt/airflow/tests -m integration -v"
+	@echo "✅ Integration tests completed. Artifacts stored under ./artifacts and ./mlruns."
 	docker compose -f airflow/docker-compose.yaml down --remove-orphans
 
 # === Local CI/CD Simulation ===
@@ -186,14 +187,14 @@ bootstrap:
 # === Cleanup ===
 clean-disk:
 	docker system prune -a -f --volumes
-	sudo rm -rf airflow/logs/* mlruns/* || true
+	sudo rm -rf airflow/logs/* mlruns/* artifacts/* || true
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	df -h /
 
 clean-light:
 	docker container prune -f
 	docker image prune -f
-	sudo rm -rf airflow/logs/* || true
+	sudo rm -rf airflow/logs/* artifacts/* || true
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	df -h /
 

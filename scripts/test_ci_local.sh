@@ -89,9 +89,15 @@ echo "🔹 Step 5: Ensuring MLflow database exists..."
 make create-mlflow-db
 
 # ------------------------------------------------------------------
-# 6. Initialize Airflow DB
+# 6. Fix mlflow-runs volume ownership (moved earlier, before Airflow init)
 # ------------------------------------------------------------------
-echo "🔹 Step 6: Initializing Airflow DB..."
+echo "🔹 Step 6: Fixing mlflow-runs volume permissions..."
+docker compose --env-file $CI_ENV -f airflow/docker-compose.yaml run --rm fix-mlflow-runs
+
+# ------------------------------------------------------------------
+# 7. Initialize Airflow DB
+# ------------------------------------------------------------------
+echo "🔹 Step 7: Initializing Airflow DB..."
 for i in {1..3}; do
   if docker compose --env-file $CI_ENV -f airflow/docker-compose.yaml run --rm airflow-init; then
     echo "✅ Airflow DB initialized"
@@ -104,15 +110,15 @@ for i in {1..3}; do
 done
 
 # ------------------------------------------------------------------
-# 7. Start Airflow + MLflow
+# 8. Start Airflow + MLflow
 # ------------------------------------------------------------------
-echo "🔹 Step 7: Starting Airflow + MLflow..."
+echo "🔹 Step 8: Starting Airflow + MLflow..."
 docker compose --env-file $CI_ENV -f airflow/docker-compose.yaml up -d webserver scheduler mlflow
 
 # ------------------------------------------------------------------
-# 8. Health checks
+# 9. Health checks
 # ------------------------------------------------------------------
-echo "🔹 Step 8: Waiting for Airflow + MLflow..."
+echo "🔹 Step 9: Waiting for Airflow + MLflow..."
 
 echo "⏳ Waiting for Airflow webserver..."
 ok=0
@@ -136,13 +142,7 @@ if [ "$ok" -ne 1 ]; then
 fi
 
 # ------------------------------------------------------------------
-# 9. Fix mlflow-runs volume ownership
-# ------------------------------------------------------------------
-echo "🔹 Step 9: Fixing mlflow-runs volume permissions..."
-docker compose --env-file $CI_ENV -f airflow/docker-compose.yaml run --rm fix-mlflow-runs
-
-# ------------------------------------------------------------------
-# 10. Bootstrap model + run integration tests
+# 10. Bootstrap model + start Serve
 # ------------------------------------------------------------------
 echo "🔹 Step 10: Bootstrapping dummy model in MLflow..."
 docker compose --env-file $CI_ENV -f airflow/docker-compose.yaml run --rm \
