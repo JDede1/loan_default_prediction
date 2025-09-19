@@ -161,3 +161,14 @@ echo "🔹 Step 11: Running integration tests..."
 make integration-tests
 
 echo "✅ Integration CI checks passed!"
+
+# ------------------------------------------------------------------
+# 12. Optional CD (deploy trainer image)
+# ------------------------------------------------------------------
+if [ "${CD:-0}" -eq 1 ]; then
+  echo "🔹 Step 12: Deploying trainer image (local CD)..."
+  make deploy-trainer
+  echo "✅ Trainer image deployed (build + push + Airflow var set)."
+else
+  echo "ℹ️ Skipping CD step (set CD=1 to enable)."
+fi

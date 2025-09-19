@@ -333,3 +333,7 @@ bootstrap-all: fix-perms fix-mlflow-volume build-mlflow trainer fresh-reset veri
 export-env-vars:
 	@echo "📦 Exporting .env → airflow/variables.json"
 	@python3 scripts/export_env_vars.py
+
+# === Local CD (build + push trainer) ===
+deploy-trainer: build-trainer push-trainer set-trainer-image
+	@echo "🚀 Trainer image built, pushed, and Airflow variable updated."

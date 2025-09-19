@@ -11,8 +11,7 @@ terraform {
 provider "google" {
   project     = var.project_id
   region      = var.region
-  # ✅ Use the container mount path instead of relative path
-  credentials = file("/opt/airflow/keys/gcs-service-account.json")
+  credentials = file("${path.module}/../../keys/gcs-service-account.json")
 }
 
 # Enable required GCP APIs
@@ -23,10 +22,10 @@ resource "google_project_service" "storage_api" {
 
 # GCS bucket for MLflow, predictions, reports, etc.
 resource "google_storage_bucket" "artifacts" {
-  name          = "loan-default-artifacts-${var.project_id}"
+  name          = "loan-default-artifacts-loan-default-mlops"
   location      = "US-CENTRAL1"
   storage_class = "STANDARD"
-  force_destroy = true
+  force_destroy = false
 
   uniform_bucket_level_access = true
 
