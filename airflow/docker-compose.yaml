@@ -5,7 +5,8 @@ volumes:
   airflow-logs:
   airflow-artifacts:
   airflow-tmp:
-  mlflow-data:   # still used for artifacts cache
+  mlflow-data:     # still used for MLflow DB & cache
+  mlflow-runs:     # ✅ shared volume for MLflow model registry
 
 networks:
   airflow:
@@ -26,6 +27,7 @@ services:
       retries: 10
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
     networks: [airflow]
 
   airflow-init:
@@ -50,11 +52,15 @@ services:
       - ./plugins:/opt/airflow/plugins
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
+      - ../tests:/opt/airflow/tests
+      - ../pytest.ini:/opt/airflow/pytest.ini
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json
+      - ../requirements-dev.txt:/opt/airflow/requirements-dev.txt
       - ./artifacts:/opt/airflow/artifacts
       - ../airflow/create_airflow_user.sh:/opt/airflow/create_airflow_user.sh
       - ../airflow/variables.json:/opt/airflow/variables.json
       - airflow-tmp:/opt/airflow/tmp
+      - mlflow-runs:/opt/airflow/mlruns
     networks: [airflow]
     restart: "no"
 
@@ -78,11 +84,15 @@ services:
       - ./plugins:/opt/airflow/plugins
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
+      - ../tests:/opt/airflow/tests
+      - ../pytest.ini:/opt/airflow/pytest.ini
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json
       - ../requirements.serve.txt:/opt/airflow/requirements.serve.txt
+      - ../requirements-dev.txt:/opt/airflow/requirements-dev.txt
       - ./artifacts:/opt/airflow/artifacts
       - ../airflow/variables.json:/opt/airflow/variables.json
       - airflow-tmp:/opt/airflow/tmp
+      - mlflow-runs:/opt/airflow/mlruns
     ports:
       - "8080:8080"
     healthcheck:
@@ -114,11 +124,15 @@ services:
       - ./plugins:/opt/airflow/plugins
       - ../src:/opt/airflow/src
       - ../data:/opt/airflow/data
+      - ../tests:/opt/airflow/tests
+      - ../pytest.ini:/opt/airflow/pytest.ini
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json
       - ../requirements.serve.txt:/opt/airflow/requirements.serve.txt
+      - ../requirements-dev.txt:/opt/airflow/requirements-dev.txt
       - ./artifacts:/opt/airflow/artifacts
       - ../airflow/variables.json:/opt/airflow/variables.json
       - airflow-tmp:/opt/airflow/tmp
+      - mlflow-runs:/opt/airflow/mlruns
     command: ["airflow", "scheduler"]
     networks: [airflow]
     restart: unless-stopped
@@ -127,14 +141,15 @@ services:
     build:
       context: ../MLflow
       dockerfile: Dockerfile.mlflow
-    image: loan-default-mlflow:latest   # ✅ custom built image
+    image: loan-default-mlflow:latest
     container_name: mlflow
     environment:
       BACKEND_URI: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres/mlflow
-      ARTIFACT_ROOT: gs://loan-default-artifacts-loan-default-mlops/mlflow
+      ARTIFACT_ROOT: ${MLFLOW_ARTIFACT_URI:-gs://loan-default-artifacts-loan-default-mlops/mlflow}
       GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
     volumes:
       - mlflow-data:/mlflow-data
+      - mlflow-runs:/opt/airflow/mlruns
       - ../keys/gcs-service-account.json:/opt/airflow/keys/gcs-service-account.json:ro
     ports:
       - "5000:5000"
@@ -161,8 +176,23 @@ services:
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
     volumes:
       - ../entrypoint_serve.sh:/opt/airflow/entrypoint_serve.sh
+      - mlflow-runs:/opt/airflow/mlruns
     command: ["bash", "/opt/airflow/entrypoint_serve.sh"]
     ports:
       - "5001:5001"
     networks: [airflow]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5001/invocations"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # ✅ Init container to fix mlflow-runs permissions
+  fix-mlflow-runs:
+    image: alpine:3.19
+    user: "0:0"
+    volumes:
+      - mlflow-runs:/opt/airflow/mlruns
+    command: sh -c "chown -R 50000:50000 /opt/airflow/mlruns && chmod -R 777 /opt/airflow/mlruns"
+    networks: [airflow]

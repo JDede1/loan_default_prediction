@@ -1,6 +1,6 @@
 .PHONY: install lint format check-format test start stop down start-core stop-core start-serve stop-serve troubleshoot \
-	terraform-init terraform-plan terraform-apply terraform-destroy integration-tests \
-	fix-perms reset-logs bootstrap clean-disk clean-light stop-hard backup-airflow restore-airflow \
+	terraform-init terraform-plan terraform-apply terraform-destroy integration-tests ci-local \
+	fix-perms fix-mlflow-volume reset-logs bootstrap clean-disk clean-light stop-hard backup-airflow restore-airflow \
 	reset fresh-reset restart-webserver restart-serve reset-vars verify \
 	gcloud-auth build-trainer push-trainer trainer build-mlflow bootstrap-all create-mlflow-db
 
@@ -24,7 +24,7 @@ test:
 	pytest -v tests
 
 # === Airflow / MLflow Core ===
-start: fix-perms
+start: fix-perms fix-mlflow-volume
 	docker compose -f airflow/docker-compose.yaml up -d
 	@echo "🌐 Stack started: Airflow → http://localhost:8080 | MLflow → http://localhost:5000 | Serve → http://localhost:5001"
 
@@ -37,7 +37,7 @@ down:
 	@echo "🛑 All services stopped and removed (containers + networks)."
 
 # Start/stop only the main stack (postgres, webserver, scheduler, mlflow)
-start-core: fix-perms
+start-core: fix-perms fix-mlflow-volume
 	docker compose -f airflow/docker-compose.yaml up -d postgres mlflow scheduler webserver
 	@echo "🌐 Airflow UI → http://localhost:8080 | MLflow UI → http://localhost:5000"
 
@@ -132,17 +132,29 @@ terraform-destroy:
 	docker compose -f airflow/docker-compose.yaml run --rm terraform "terraform destroy -auto-approve"
 
 # === Integration Tests ===
-integration-tests:
+integration-tests: create-mlflow-db fix-mlflow-volume
 	docker compose -f airflow/docker-compose.yaml up -d serve
+	@echo "⏳ Waiting for Serve API..."
+	@for i in {1..30}; do \
+		if curl -sf http://localhost:5001/invocations >/dev/null; then \
+			echo "✅ Serve API is ready!"; break; \
+		fi; \
+		echo "   Waiting... ($$i/30)"; sleep 3; \
+	done
 	docker compose -f airflow/docker-compose.yaml run --rm \
 		--workdir /opt/airflow \
 		--entrypoint "" \
 		-e PYTHONPATH=/opt/airflow \
 		-e RUN_INTEGRATION_TESTS=1 \
 		-e MLFLOW_TRACKING_URI=http://mlflow:5000 \
+		-e MLFLOW_ARTIFACT_URI=file:/opt/airflow/mlruns \
 		-e GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json \
-		webserver pytest tests -m integration -v
+		webserver bash -c "pip install -r /opt/airflow/requirements-dev.txt && pytest /opt/airflow/tests -m integration -v"
 	docker compose -f airflow/docker-compose.yaml down --remove-orphans
+
+# === Local CI/CD Simulation ===
+ci-local: fix-perms fix-scripts fix-mlflow-volume
+	./scripts/test_ci_local.sh
 
 # === Permissions & Logs ===
 reset-logs:
@@ -153,14 +165,16 @@ reset-logs:
 	@echo "✅ Airflow logs reset with correct ownership."
 
 fix-perms: reset-logs fix-scripts
-	mkdir -p artifacts airflow/artifacts airflow/tmp mlruns
-	sudo chmod -R 777 artifacts airflow/artifacts airflow/tmp mlruns
-	sudo touch airflow/artifacts/optuna_study.db || true
-	sudo chmod 666 airflow/artifacts/optuna_study.db || true
+	mkdir -p artifacts airflow/artifacts airflow/tmp mlruns mlflow-runs
+	sudo chmod -R 777 artifacts airflow/artifacts airflow/tmp mlruns mlflow-runs || true
 	chmod +x airflow/create_airflow_user.sh || true
 
+fix-mlflow-volume:
+	docker compose -f airflow/docker-compose.yaml run --rm fix-mlflow-runs
+	@echo "✅ mlflow-runs volume ownership fixed inside Docker"
+
 fix-scripts:
-	chmod +x entrypoint_serve.sh MLflow/tracking_entrypoint.sh || true
+	chmod +x entrypoint_serve.sh MLflow/tracking_entrypoint.sh scripts/test_ci_local.sh || true
 
 # === One-shot setup for fresh envs ===
 bootstrap:
@@ -195,7 +209,7 @@ backup-airflow:
 
 restore-airflow:
 	docker cp ./airflow/variables.json airflow-webserver:/opt/airflow/variables.json || true
-	docker cp ./airflow/connections.json airflow-webserver:/opt/airflow/connections.json || true
+	docker cp ./airflow/connections.json airflow-webserver:/opt/airflow/variables.json || true
 	docker compose -f airflow/docker-compose.yaml exec webserver \
 		airflow variables import /opt/airflow/variables.json || true
 	docker compose -f airflow/docker-compose.yaml exec webserver \
@@ -204,22 +218,25 @@ restore-airflow:
 
 # === Create MLflow Database in Postgres ===
 create-mlflow-db:
-	@echo "⚙️ Waiting for Postgres to be ready..."
+	@echo "⚙️ Ensuring MLflow database exists in Postgres..."
+	@if ! docker compose -f airflow/docker-compose.yaml ps postgres | grep -q "Up"; then \
+		echo "❌ Postgres container is not running — start it first with 'make start-core' or 'make start'"; \
+		exit 1; \
+	fi
 	@for i in {1..10}; do \
 		if docker compose -f airflow/docker-compose.yaml exec postgres pg_isready -U airflow -d airflow >/dev/null 2>&1; then \
 			echo "✅ Postgres is ready!"; break; \
 		fi; \
 		echo "   Waiting ($$i/10)..."; sleep 3; \
 	done
-	@echo "⚙️ Creating MLflow database in Postgres (if not exists)..."
-	-docker compose -f airflow/docker-compose.yaml exec postgres psql -U airflow -d airflow -tc "SELECT 1 FROM pg_database WHERE datname = 'mlflow'" | grep -q 1 || \
+	@docker compose -f airflow/docker-compose.yaml exec postgres psql -U airflow -d airflow -tc "SELECT 1 FROM pg_database WHERE datname = 'mlflow'" | grep -q 1 || \
 		docker compose -f airflow/docker-compose.yaml exec postgres psql -U airflow -d airflow -c "CREATE DATABASE mlflow;"
 	@echo "🔄 Restarting MLflow service to pick up the new database..."
 	docker compose -f airflow/docker-compose.yaml restart mlflow
 	@echo "✅ MLflow database ensured and service restarted"
 
 # === Reset stacks ===
-reset: fix-perms export-env-vars
+reset: fix-perms fix-mlflow-volume export-env-vars
 	docker compose -f airflow/docker-compose.yaml down -v
 	docker compose -f airflow/docker-compose.yaml build
 	docker compose -f airflow/docker-compose.yaml run --rm airflow-init
@@ -235,7 +252,7 @@ reset: fix-perms export-env-vars
 		airflow variables import /opt/airflow/variables.json
 	@echo "✅ Reset complete (cached). Airflow UI → http://localhost:8080 | MLflow UI → http://localhost:5000"
 
-fresh-reset: fix-perms export-env-vars
+fresh-reset: fix-perms fix-mlflow-volume export-env-vars
 	docker compose -f airflow/docker-compose.yaml down -v
 	docker compose -f airflow/docker-compose.yaml build --no-cache
 	docker compose -f airflow/docker-compose.yaml run --rm airflow-init
@@ -308,7 +325,7 @@ build-mlflow:
 	@echo "✅ MLflow image built."
 
 # === Full Bootstrap ===
-bootstrap-all: fix-perms build-mlflow trainer fresh-reset verify
+bootstrap-all: fix-perms fix-mlflow-volume build-mlflow trainer fresh-reset verify
 	@echo "🚀 Full stack rebuilt after clean-disk."
 
 # === Export Vars ===

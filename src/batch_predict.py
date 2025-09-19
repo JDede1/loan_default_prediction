@@ -4,6 +4,7 @@ import os
 import shutil
 from datetime import datetime
 
+import mlflow
 import mlflow.pyfunc
 import pandas as pd
 
@@ -31,10 +32,6 @@ os.makedirs(TMP_ARTIFACT_DIR, exist_ok=True)
 # Safe file write helper
 # -----------------------
 def safe_write_csv(df: pd.DataFrame, final_path: str) -> str:
-    """
-    Writes CSV to tmp first, then moves to final path if possible.
-    Returns the path where the file actually ended up.
-    """
     tmp_path = os.path.join(TMP_ARTIFACT_DIR, os.path.basename(final_path))
     df.to_csv(tmp_path, index=False)
 
@@ -70,6 +67,13 @@ def main(args):
     print(f"Output path (base): {args.output_path}")
 
     # ---------------------------
+    # 0. Configure MLflow tracking (critical for registry resolution)
+    # ---------------------------
+    mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+    print(f"🔗 Using MLflow Tracking URI: {mlflow_tracking_uri}")
+    mlflow.set_tracking_uri(mlflow_tracking_uri)
+
+    # ---------------------------
     # 1. Load model from MLflow Registry
     # ---------------------------
     model_uri = f"models:/{args.model_name}@{args.alias}"
@@ -82,7 +86,6 @@ def main(args):
     # ---------------------------
     print(f"\n📥 Reading batch input from: {args.input_path}")
     if args.input_path.startswith("gs://"):
-        # GCS input handled by pandas + gcsfs
         df = pd.read_csv(args.input_path)
     else:
         ext = os.path.splitext(args.input_path)[-1].lower()
@@ -96,6 +99,21 @@ def main(args):
             raise ValueError("❌ Unsupported file format. Use CSV, JSON, or Parquet.")
 
     print(f"📊 Input data shape: {df.shape}")
+
+    # ---------------------------
+    # 2b. Normalize dtypes to match MLflow model schema
+    # ---------------------------
+    dtype_overrides = {
+        "loan_amnt": "int64",
+        "issue_year": "int64",
+        "mo_sin_old_il_acct": "int64",
+    }
+    for col, dtype in dtype_overrides.items():
+        if col in df.columns:
+            try:
+                df[col] = df[col].astype(dtype)
+            except Exception as e:
+                print(f"⚠️ Could not cast {col} to {dtype}: {e}")
 
     # ---------------------------
     # 3. Run predictions
@@ -118,14 +136,26 @@ def main(args):
     print(f"✅ Predictions saved locally: {saved_path}")
 
     # ---------------------------
-    # 5. Upload to GCS (always if bucket is set)
+    # 5. Upload to GCS (skip if dummy creds)
     # ---------------------------
     gcs_bucket = os.getenv("GCS_BUCKET")
-    if gcs_bucket:
+    creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+
+    def is_dummy_creds(path: str) -> bool:
+        try:
+            with open(path) as f:
+                text = f.read()
+                return "dummy" in text
+        except Exception:
+            return False
+
+    if gcs_bucket and creds_path and not is_dummy_creds(creds_path):
         gcs_destination = f"predictions/{os.path.basename(saved_path)}"
         upload_to_gcs(saved_path, gcs_bucket, gcs_destination)
         saved_path = f"gs://{gcs_bucket}/{gcs_destination}"
         print(f"✅ Predictions also available in GCS: {saved_path}")
+    else:
+        print("⚠️ Skipping GCS upload (dummy or missing credentials).")
 
     # ---------------------------
     # 6. Store latest prediction path in Airflow Variable

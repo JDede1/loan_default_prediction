@@ -48,13 +48,18 @@ def is_host_reachable(host: str, port: int) -> bool:
         return False
 
 
+# -----------------------
+# MLflow Configuration
+# -----------------------
 GCS_BUCKET = os.getenv("GCS_BUCKET", "loan-default-artifacts-loan-default-mlops")
 mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
+
+# ✅ Honor env override first, else default to GCS
 mlflow_artifact_uri = os.getenv("MLFLOW_ARTIFACT_URI", f"gs://{GCS_BUCKET}/mlflow")
+
 vertex_training = os.getenv("VERTEX_AI_TRAINING", "0") == "1"
 
 if not vertex_training:
-    # ✅ Local Airflow / Docker
     if mlflow_tracking_uri and "http://mlflow:5000" in mlflow_tracking_uri:
         if is_host_reachable("mlflow", 5000):
             print(f"✅ Using MLflow server: {mlflow_tracking_uri}")
@@ -73,12 +78,12 @@ if not vertex_training:
     if experiment is None:
         experiment_id = client.create_experiment(
             EXPERIMENT_NAME,
-            artifact_location=mlflow_artifact_uri,  # ✅ always GCS artifacts
+            artifact_location=mlflow_artifact_uri,  # ✅ always matches env override
         )
     else:
         experiment_id = experiment.experiment_id
 else:
-    experiment_id = None  # Vertex mode skips MLflow
+    experiment_id = None
 
 
 # -----------------------
@@ -172,7 +177,7 @@ def log_artifacts(model, X_test, y_test, run_id, feature_names):
     plt.savefig(fi_path)
     plt.close()
 
-    # Log everything under one folder in MLflow (→ goes to GCS)
+    # Log everything under one folder in MLflow (→ goes to GCS or local mlruns)
     mlflow.log_artifacts(artifact_dir)
 
 
@@ -231,29 +236,24 @@ def log_and_register_model(
 # Vertex AI Save (Option B branch)
 # -----------------------
 def save_to_gcs(model, metrics, params, gcs_bucket):
-    # 👇 Use DAG-provided run prefix if available
     run_prefix = os.getenv("RUN_PREFIX")
     if not run_prefix:
-        # fallback if RUN_PREFIX not provided
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_prefix = f"vertex_runs/{timestamp}"
 
     client = storage.Client()
     bucket = client.bucket(gcs_bucket)
 
-    # Save metrics
     metrics_path = "/tmp/metrics.json"
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
     bucket.blob(f"{run_prefix}/metrics.json").upload_from_filename(metrics_path)
 
-    # Save params
     params_path = "/tmp/params.json"
     with open(params_path, "w") as f:
         json.dump(params, f, indent=2)
     bucket.blob(f"{run_prefix}/params.json").upload_from_filename(params_path)
 
-    # Save model
     local_model_dir = "/tmp/model"
     if os.path.exists(local_model_dir):
         shutil.rmtree(local_model_dir)

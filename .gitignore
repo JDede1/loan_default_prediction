@@ -66,6 +66,7 @@ artifacts/
 data/*
 !data/sample_input.json
 !data/batch_input.csv
+!data/loan_default_selected_features_clean.csv
 
 # ==========================
 # Model Artifacts
