@@ -1,9 +1,7 @@
-name: Integration Tests + CD
+name: CI/CD Pipeline
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * *"
+  workflow_dispatch:   # ✅ run manually only
 
 jobs:
   integration:
@@ -160,6 +158,7 @@ jobs:
   cd-deploy:
     needs: integration   # only runs if integration passes
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'   # ✅ only deploy from main
     timeout-minutes: 20
 
     steps:
