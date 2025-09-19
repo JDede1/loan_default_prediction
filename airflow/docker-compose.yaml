@@ -6,7 +6,7 @@ volumes:
   airflow-artifacts:
   airflow-tmp:
   mlflow-data:     # still used for MLflow DB & cache
-  mlflow-runs:     # ✅ shared volume for MLflow model registry
+  mlflow-runs:     # ✅ shared volume for MLflow model registry (local/dev)
 
 networks:
   airflow:
@@ -78,6 +78,8 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres/${POSTGRES_DB:-airflow}
       PYTHONPATH: /opt/airflow:/opt/airflow/src
       GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
+      # ✅ Unified env var for artifact storage
+      MLFLOW_ARTIFACT_URI: ${MLFLOW_ARTIFACT_URI:-file:/opt/airflow/mlruns}
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
@@ -118,6 +120,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres/${POSTGRES_DB:-airflow}
       PYTHONPATH: /opt/airflow:/opt/airflow/src
       GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
+      MLFLOW_ARTIFACT_URI: ${MLFLOW_ARTIFACT_URI:-file:/opt/airflow/mlruns}
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
@@ -145,7 +148,7 @@ services:
     container_name: mlflow
     environment:
       BACKEND_URI: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres/mlflow
-      ARTIFACT_ROOT: ${MLFLOW_ARTIFACT_URI:-gs://loan-default-artifacts-loan-default-mlops/mlflow}
+      ARTIFACT_ROOT: ${MLFLOW_ARTIFACT_URI:-file:/opt/airflow/mlruns}
       GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/keys/gcs-service-account.json
     volumes:
       - mlflow-data:/mlflow-data
@@ -174,6 +177,7 @@ services:
       MODEL_ALIAS: ${MODEL_ALIAS:-staging}
       PORT: 5001
       MLFLOW_TRACKING_URI: ${MLFLOW_TRACKING_URI:-http://mlflow:5000}
+      MLFLOW_ARTIFACT_URI: ${MLFLOW_ARTIFACT_URI:-file:/opt/airflow/mlruns}
     volumes:
       - ../entrypoint_serve.sh:/opt/airflow/entrypoint_serve.sh
       - mlflow-runs:/opt/airflow/mlruns

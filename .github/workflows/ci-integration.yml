@@ -42,8 +42,8 @@ jobs:
           echo "AIRFLOW__WEBSERVER__WORKER_TMP_DIR=/opt/airflow/tmp" >> .env
           echo "PYTHONPATH=/opt/airflow:/opt/airflow/src" >> .env
           echo "MLFLOW_TRACKING_URI=http://mlflow:5000" >> .env
-          # ✅ Force CI to use /tmp/mlruns (writable inside containers)
-          echo "MLFLOW_ARTIFACT_URI=file:/tmp/mlruns" >> .env
+          # ✅ Always use mounted volume inside containers
+          echo "MLFLOW_ARTIFACT_URI=file:/opt/airflow/mlruns" >> .env
           echo "GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json" >> .env
           echo "GCS_BUCKET=dummy-ci-bucket" >> .env
 
@@ -82,6 +82,10 @@ jobs:
       # Ensure MLflow database exists
       - name: Ensure MLflow database
         run: make create-mlflow-db
+
+      # Fix mlflow-runs volume permissions
+      - name: Fix mlflow-runs volume
+        run: docker compose --env-file .env -f airflow/docker-compose.yaml run --rm fix-mlflow-runs
 
       # Init Airflow DB (retry if needed)
       - name: Initialize Airflow DB
