@@ -147,7 +147,7 @@ integration-tests: create-mlflow-db fix-mlflow-volume
 		-e PYTHONPATH=/opt/airflow \
 		-e RUN_INTEGRATION_TESTS=1 \
 		-e MLFLOW_TRACKING_URI=http://mlflow:5000 \
-		-e MLFLOW_ARTIFACT_URI=file:/opt/airflow/mlruns \
+		-e MLFLOW_ARTIFACT_URI=file:/tmp/mlruns \
 		-e GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json \
 		webserver bash -c "pip install -r /opt/airflow/requirements-dev.txt && pytest /opt/airflow/tests -m integration -v"
 	docker compose -f airflow/docker-compose.yaml down --remove-orphans

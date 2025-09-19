@@ -42,7 +42,8 @@ jobs:
           echo "AIRFLOW__WEBSERVER__WORKER_TMP_DIR=/opt/airflow/tmp" >> .env
           echo "PYTHONPATH=/opt/airflow:/opt/airflow/src" >> .env
           echo "MLFLOW_TRACKING_URI=http://mlflow:5000" >> .env
-          echo "MLFLOW_ARTIFACT_URI=file:/opt/airflow/mlruns" >> .env
+          # ✅ Force CI to use /tmp/mlruns (writable inside containers)
+          echo "MLFLOW_ARTIFACT_URI=file:/tmp/mlruns" >> .env
           echo "GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json" >> .env
           echo "GCS_BUCKET=dummy-ci-bucket" >> .env
 

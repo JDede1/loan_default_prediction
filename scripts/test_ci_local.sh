@@ -14,7 +14,7 @@ else
     docker compose --env-file $CI_ENV -f airflow/docker-compose.yaml down -v || true
     rm -f $CI_ENV
     rm -f keys/gcs-service-account.json airflow/keys/gcs-service-account.json
-    sudo rm -rf airflow/logs/* airflow/artifacts/* airflow/tmp/* mlruns/* artifacts/* || true
+    sudo rm -rf airflow/logs/* airflow/artifacts/* airflow/tmp/* mlruns/* artifacts/* /tmp/mlruns/* || true
     echo "🎉 Local CI/CD simulation complete! (cleanup ensured)"
   }' EXIT
 fi
@@ -23,7 +23,7 @@ fi
 # 1. Setup paths and env
 # ------------------------------------------------------------------
 CI_ENV=".env.ci"
-mkdir -p keys airflow/keys airflow/logs airflow/artifacts airflow/tmp mlruns artifacts
+mkdir -p keys airflow/keys airflow/logs airflow/artifacts airflow/tmp mlruns artifacts /tmp/mlruns
 
 # Clean old CI env
 rm -f $CI_ENV
@@ -54,14 +54,14 @@ AIRFLOW_UID=0
 PYTHONPATH=/opt/airflow:/opt/airflow/src
 GCS_BUCKET=dummy-ci-bucket
 MLFLOW_TRACKING_URI=http://mlflow:5000
-MLFLOW_ARTIFACT_URI=file:/opt/airflow/mlruns
+MLFLOW_ARTIFACT_URI=file:/tmp/mlruns
 GOOGLE_APPLICATION_CREDENTIALS=/opt/airflow/keys/gcs-service-account.json
 EOF
 
 echo '{"dummy":"true"}' > keys/gcs-service-account.json
 echo '{"dummy":"true"}' > airflow/keys/gcs-service-account.json
 
-chmod -R 777 airflow/logs airflow/artifacts airflow/tmp mlruns artifacts || true
+chmod -R 777 airflow/logs airflow/artifacts airflow/tmp mlruns artifacts /tmp/mlruns || true
 
 # ------------------------------------------------------------------
 # 4. Build and start stack (Postgres + Airflow + MLflow)
@@ -145,7 +145,7 @@ docker compose --env-file $CI_ENV -f airflow/docker-compose.yaml run --rm fix-ml
 # ------------------------------------------------------------------
 echo "🔹 Step 10: Bootstrapping dummy model in MLflow..."
 docker compose --env-file $CI_ENV -f airflow/docker-compose.yaml run --rm \
-  -e MLFLOW_ARTIFACT_URI=file:/opt/airflow/mlruns \
+  -e MLFLOW_ARTIFACT_URI=file:/tmp/mlruns \
   webserver \
   python src/train_with_mlflow.py \
     --data_path /opt/airflow/data/loan_default_selected_features_clean.csv \
