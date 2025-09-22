@@ -3,8 +3,6 @@
 ![Python](https://img.shields.io/badge/python-3.10-blue.svg)
 ![Docker](https://img.shields.io/badge/docker-ready-blue)
 ![Terraform](https://img.shields.io/badge/IaC-Terraform-623CE4?logo=terraform)
-![Linting](https://img.shields.io/badge/linting-flake8-green)
-![Code Style](https://img.shields.io/badge/code%20style-black-black)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
 ---
@@ -14,12 +12,13 @@
 
 ## 🎥 Demo
 
-The following demo shows the end-to-end workflow in action:
+The following demo shows the **Airflow UI** with all orchestrated DAGs available:
 
-1. Triggering the **training pipeline DAG** in Airflow.
-2. Running the Vertex AI training job.
-3. Logging metrics, parameters, and artifacts into **MLflow**.
-4. Registering the trained model in the MLflow Model Registry.
+1. **Training Pipeline DAG** – submits training jobs and logs results in MLflow.
+2. **Hyperparameter Tuning DAG** – runs Optuna optimization for XGBoost.
+3. **Batch Prediction DAG** – generates daily predictions.
+4. **Monitoring DAG** – runs Evidently drift detection and can trigger retraining.
+5. **Promotion DAG** – promotes models from staging to production.
 
 ![Demo](./docs/images/airflow_train_pipeline.gif)
 
@@ -47,7 +46,7 @@ The following demo shows the end-to-end workflow in action:
 - [12. Future Improvements](#12-future-improvements)  
 - [13. Security & Contributions](#13-security--contributions)  
 - [14. Troubleshooting](#14-troubleshooting)  
-- [15. 🙏 Acknowledgments](#15--acknowledgments)  
+- [15. Acknowledgments](#15--acknowledgments)  
 
 ---
 
@@ -108,9 +107,9 @@ The project is built as a **modular MLOps pipeline** where each component handle
 
 ### 🔹 System Architecture
 
-```mermaid
+````mermaid
 graph TD
-    subgraph Dev[Local Dev / Codespaces]
+    subgraph Dev ["Local Dev / Codespaces"]
         A[Developer] -->|Code + DAGs| B[Airflow + MLflow (Docker Compose)]
         A -->|Push to Repo| G[GitHub]
     end
@@ -119,7 +118,7 @@ graph TD
     H -->|Provision Infra| T[Terraform]
     H -->|Build + Push| R[Artifact Registry]
 
-    subgraph GCP[Google Cloud Platform]
+    subgraph GCP ["Google Cloud Platform"]
         T --> BKT[GCS Bucket: Data, Artifacts, Reports]
         R --> CR[Cloud Run: Model Serving]
         T --> ML[MLflow Tracking Server (Cloud Run)]
@@ -131,7 +130,12 @@ graph TD
     CR -->|Batch Predictions| BKT
     BKT --> MON[Evidently Drift Monitoring]
     MON -->|Trigger Retrain| VA
-```
+
+````
+
+> ℹ️ **Note**: MLflow appears in both environments.
+> • Locally, MLflow runs in Docker Compose (alongside Airflow) for dev and testing.
+> • In production, MLflow is deployed on Cloud Run with GCS as the backend store.
 
 ---
 
@@ -465,8 +469,13 @@ Airflow orchestrates the ML workflows through a set of DAGs:
 **Training Pipeline DAG**
 ![Airflow Training Pipeline DAG](./docs/images/train_pipeline_dag.png)
 
-**Hyperparameter Tuning DAG**
+**Hyperparameter Tuning DAG**  
+
+View of the DAG in Airflow:  
 ![Airflow Hyperparameter Tuning DAG](./docs/images/tune_hyperparams_dag.png)
+
+Expanded view with task details:  
+![Airflow Hyperparameter Tuning DAG Expanded](./docs/images/tune_hyperparams_dag-2.png)
 
 **Batch Prediction DAG**
 
@@ -503,15 +512,16 @@ Airflow orchestrates the ML workflows through a set of DAGs:
 
 ```mermaid
 flowchart TD
-    TUNE[Tune Hyperparameters] --> TRAIN[Train Pipeline (Vertex AI)]
+    TUNE[Tune Hyperparameters] --> TRAIN["Train Pipeline (Vertex AI)"]
     TRAIN --> DECIDE{Promotion?}
     DECIDE -->|Pass| PROMOTE[Promote Model]
     DECIDE -->|Fail| SKIP[Skip Promotion]
     PROMOTE --> BATCH[Batch Prediction]
     SKIP --> BATCH
-    BATCH --> MONITOR[Monitoring DAG (Evidently)]
-    MONITOR -->|No Drift| END[End]
+    BATCH --> MONITOR["Monitoring DAG (Evidently)"]
+    MONITOR -->|No Drift| END([End])
     MONITOR -->|Drift Detected| TRAIN
+
 ```
 
 ---
@@ -706,7 +716,6 @@ mypy src
 ```bash
 pytest --cov=src tests/
 ```
-
 ---
 
 With these checks in place, the project guarantees:
@@ -1028,11 +1037,11 @@ While the current pipeline is production-ready, there are several enhancements t
 
 ---
 
-### 🔹 Advanced Monitoring
+### 🔹 Monitoring & Alerts
 
 * Integrate **WhyLogs** or **Prometheus + Grafana** for richer monitoring.
 * Add **real-time drift detection** on streaming data, not just batch.
-* Implement **alert thresholds** for latency, throughput, and cost.
+* Expand **alerting integrations** (Slack, email, PagerDuty) beyond the current Airflow notifications.
 
 ---
 
