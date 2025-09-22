@@ -155,6 +155,8 @@ integration-tests: create-mlflow-db fix-mlflow-volume
 
 # === Local CI/CD Simulation ===
 ci-local: fix-perms fix-scripts fix-mlflow-volume
+	MLFLOW_ARTIFACT_URI=file:/opt/airflow/mlruns \
+	STORAGE_BACKEND=local \
 	./scripts/test_ci_local.sh
 
 # === Permissions & Logs ===
