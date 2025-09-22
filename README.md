@@ -107,10 +107,10 @@ The project is built as a **modular MLOps pipeline** where each component handle
 
 ### 🔹 System Architecture
 
-````mermaid
+```mermaid
 graph TD
     subgraph Dev ["Local Dev / Codespaces"]
-        A[Developer] -->|Code + DAGs| B[Airflow + MLflow (Docker Compose)]
+        A[Developer] -->|Code + DAGs| B["Airflow + MLflow (Docker Compose)"]
         A -->|Push to Repo| G[GitHub]
     end
 
@@ -119,19 +119,19 @@ graph TD
     H -->|Build + Push| R[Artifact Registry]
 
     subgraph GCP ["Google Cloud Platform"]
-        T --> BKT[GCS Bucket: Data, Artifacts, Reports]
-        R --> CR[Cloud Run: Model Serving]
-        T --> ML[MLflow Tracking Server (Cloud Run)]
-        T --> VA[Vertex AI Training Jobs]
+        T --> BKT["GCS Bucket: Data, Artifacts, Reports"]
+        R --> CR["Cloud Run: Model Serving"]
+        T --> ML["MLflow Tracking Server (Cloud Run)"]
+        T --> VA["Vertex AI Training Jobs"]
     end
 
     B -->|Sync Artifacts| BKT
     ML -->|Store Experiments| BKT
     CR -->|Batch Predictions| BKT
-    BKT --> MON[Evidently Drift Monitoring]
+    BKT --> MON["Evidently Drift Monitoring"]
     MON -->|Trigger Retrain| VA
 
-````
+```
 
 > ℹ️ **Note**: MLflow appears in both environments.
 > • Locally, MLflow runs in Docker Compose (alongside Airflow) for dev and testing.

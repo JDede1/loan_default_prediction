@@ -63,8 +63,12 @@ def main(args):
     # --- Start new MLflow run ---
     experiment_name = "loan_default_experiment"
 
-    # Ensure experiment has artifact location set (prefer env, fallback to bucket/mlflow)
-    mlflow_artifact_uri = os.getenv("MLFLOW_ARTIFACT_URI", f"gs://{gcs_bucket}/mlflow")
+    # Ensure experiment has artifact location set (prefer env)
+    # Fallback to bucket/mlflow if not provided
+    mlflow_artifact_uri = os.getenv(
+        "MLFLOW_ARTIFACT_URI",
+        f"gs://{gcs_bucket}/mlflow",
+    )
 
     experiment = client.get_experiment_by_name(experiment_name)
     if experiment is None:
@@ -73,12 +77,14 @@ def main(args):
             artifact_location=mlflow_artifact_uri,
         )
         print(
-            f"✅ Created experiment '{experiment_name}' with artifact location {mlflow_artifact_uri}"
+            f"✅ Created experiment '{experiment_name}' "
+            f"with artifact location {mlflow_artifact_uri}"
         )
     else:
         experiment_id = experiment.experiment_id
         print(
-            f"ℹ️ Using existing experiment '{experiment_name}' (artifact location: {experiment.artifact_location})"
+            f"ℹ️ Using existing experiment '{experiment_name}' "
+            f"(artifact location: {experiment.artifact_location})"
         )
 
     with mlflow.start_run(experiment_id=experiment_id) as run:
