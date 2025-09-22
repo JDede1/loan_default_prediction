@@ -1,5 +1,5 @@
-![CI](https://github.com/<your-org>/loan_default_prediction/actions/workflows/ci.yml/badge.svg)
-![Integration & CD](https://github.com/<your-org>/loan_default_prediction/actions/workflows/integration-cd.yml/badge.svg)
+![CI](https://github.com/JDede1/loan_default_prediction/actions/workflows/ci.yml/badge.svg)
+![Integration & CD](https://github.com/JDede1/loan_default_prediction/actions/workflows/integration-cd.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10-blue.svg)
 ![Docker](https://img.shields.io/badge/docker-ready-blue)
 ![Terraform](https://img.shields.io/badge/IaC-Terraform-623CE4?logo=terraform)
@@ -353,7 +353,7 @@ Expected outputs:
 
 ## 5. Repository Structure
 
-The repo follows a clean structure that separates orchestration, infrastructure, source code, and CI/CD. Heavy data, secrets, logs, and runtime artifacts are **ignored in Git** (`.gitignore`) and excluded from **Docker images** (`.dockerignore`).
+The repo follows a clean structure that separates orchestration, infrastructure, source code, and CI/CD. 
 
 ### 🔹 Directory Layout
 
@@ -404,6 +404,12 @@ The repo follows a clean structure that separates orchestration, infrastructure,
 │   ├── batch_input.csv
 │   └── sample_input.json
 │
+├── docs/                  # Documentation assets
+│   ├── images/            # Screenshots + demo GIFs
+│   │   ├── airflow_train_pipeline.gif
+│   │   └── batch_prediction_dag.png
+│   └── *.png              # DAG screenshots + Vertex AI logs
+│
 ├── .github/workflows/     # GitHub Actions CI/CD
 │   ├── ci.yml             # Lint + unit tests
 │   └── integration-cd.yml # Integration tests + deploy
@@ -417,6 +423,7 @@ The repo follows a clean structure that separates orchestration, infrastructure,
 ├── SECURITY_AND_CONTRIBUTING.md
 ├── TROUBLESHOOTING.md
 └── README.md
+
 ```
 
 ---
