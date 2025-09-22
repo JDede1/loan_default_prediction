@@ -140,7 +140,11 @@ def ingest_vertex_outputs(**kwargs):
     ]
     print(f"🚀 Running ingestion: {' '.join(cmd)}")
 
+    # Inject MLflow env vars so ingestion logs to GCS instead of local mlruns
     env = os.environ.copy()
+    env["MLFLOW_TRACKING_URI"] = MLFLOW_TRACKING_URI
+    env["MLFLOW_ARTIFACT_URI"] = MLFLOW_ARTIFACT_URI
+
     result = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
     print("STDOUT:\n", result.stdout)

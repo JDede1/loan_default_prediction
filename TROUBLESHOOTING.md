@@ -1,176 +1,219 @@
-# 🛠 Troubleshooting
+# Troubleshooting Guide
 
-Common issues and fixes when running the pipeline:
-
-
-### 1. **Serve container fails with `RESOURCE_DOES_NOT_EXIST`**
-
-**Error:**
-
-```
-mlflow.exceptions.RestException: RESOURCE_DOES_NOT_EXIST: Registered Model with name=loan_default_model not found
-```
-
-**Cause:** Serving container started **before** a model exists in the MLflow Registry.
-
-**Fix:**
-
-1. Start core services: `make start`
-2. Train a model via Airflow DAG `train_pipeline_dag`
-3. Confirm in MLflow UI → *Models* → `loan_default_model`
-4. Start serving: `make start-serve` (health: `curl -sS http://localhost:5001/ping`)
-
-
-### 2. **Permission denied writing artifacts (plots, reports)**
-
-**Error in Airflow logs:**
-
-```
-⚠️ Permission denied writing /opt/airflow/artifacts/feature_importance.png
-```
-
-**Cause:** Container doesn’t have write permissions on mounted `artifacts/`.
-
-**Fix:**
-
-* Run `make fix-perms` (new Make target to reset ownership and perms).
-* Or, inside Codespaces, run manually:
-
-  ```bash
-  sudo chmod -R 777 artifacts/ airflow/artifacts/ airflow/logs/ mlruns/
-  ```
-
-This ensures Airflow tasks can write plots and reports directly to the mounted artifact dirs, instead of falling back to `/tmp/artifacts`.
-
-
-### 3. **MLflow Git SHA warnings**
-
-**Error in logs:**
-
-```
-WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH)...
-```
-
-**Cause:** MLflow tries to capture the Git commit hash for reproducibility, but `git` wasn’t available in the container.
-
-**Fix:**
-We now install `git` in `Dockerfile.airflow`. Rebuild your containers:
-
-```bash
-make stop
-make start
-```
-
-
-### 4. **MLflow requirements inference warnings**
-
-**Error in logs:**
-
-```
-WARNING mlflow.utils.environment: Encountered an unexpected error while inferring pip requirements...
-```
-
-**Cause:** MLflow tries to auto-infer dependencies from the model, which may fail or be incomplete.
-
-**Fix:**
-We now provide a pinned `requirements.serve.txt` when logging models. This ensures serving uses the exact same dependency versions as training, avoiding inference issues.
-
-
-### 5. **GCS access errors (403 / denied)**
-
-**Error:**
-
-```
-google.api_core.exceptions.Forbidden: 403 ... does not have storage.objects.get access
-```
-
-**Fix:**
-
-* Ensure your service account has IAM:
-
-  * `roles/storage.objectAdmin` (read/write)
-  * Or minimally `roles/storage.objectViewer` (read-only)
-* Verify key is mounted correctly:
-  `keys/gcs-service-account.json` → `/opt/airflow/keys/gcs-service-account.json`
-
-
-### 6. **Airflow webserver won’t start (healthcheck fails)**
-
-**Fix:**
-
-* Run `make troubleshoot` to tail logs.
-* Ensure no stale PID files:
-
-  ```bash
-  rm -f airflow/airflow-webserver.pid airflow/airflow-scheduler.pid
-  ```
-* Rebuild clean:
-
-  ```bash
-  make stop
-  make start --fresh
-  ```
-
-
-### 7. **Integration tests fail (`serve` not found)**
-
-**Error:**
-
-```
-HTTPConnectionPool(host='serve', port=5001): Max retries exceeded with url: /invocations (Caused by NameResolutionError...)
-```
-
-**Cause:** Previously, `serve` was not running in the same Compose network when integration tests executed.
-
-**Fix:**
-The `make integration-tests` target now automatically brings up `serve` before running tests.
-Simply run:
-
-```bash
-make start
-make integration-tests
-make stop
-```
-
-No manual `make start-serve` step is required anymore.
-
-
-### 8. **Git LFS blocking pushes**
-
-**Error:**
-
-```
-This repository is configured for Git LFS but 'git-lfs' was not found on your path
-```
-
-**Fix:**
-
-* Install git-lfs inside Codespaces (already automated in `.devcontainer`).
-* Or disable LFS hooks if not using LFS:
-
-  ```bash
-  rm -f .git/hooks/pre-push .git/hooks/post-commit
-  ```
-
-
-### 9. **“Docker-in-Docker” feature fails in Codespaces**
-
-**Why**
-Codespaces already provides Docker — no need for DinD.
-
-**Fix**
-
-* Ensure `.devcontainer/devcontainer.json` does **not** include `docker-in-docker` feature.
-* Use the provided devcontainer that installs `gcloud`, Terraform, and `git-lfs` only.
-
-
-🔑 **Tip:** When in doubt, run:
-
-```bash
-make troubleshoot
-docker compose -f airflow/docker-compose.yaml logs -f
-```
-
-This will surface most container-level issues.
+This document lists common issues encountered during development and deployment, with the **exact error messages** and the fixes that resolved them.
 
 ---
+
+## 🔑 Environment & Dependencies
+
+**Issue 1: MLflow dependency mismatch**
+
+```
+ValueError: XGBoost version mismatch between training (3.0.4) and serving (1.7.6).
+```
+
+✅ **Fix:** Pin aligned versions in `requirements.serve.txt`.
+
+---
+
+**Issue 2: Missing requirements file**
+
+```
+FileNotFoundError: [Errno 2] No such file or directory: '/opt/airflow/requirements.serve.txt'
+```
+
+✅ **Fix:** Updated `Dockerfile.airflow` to copy the missing file.
+
+---
+
+**Issue 3: Airflow dependency conflict**
+
+```
+pkg_resources.ContextualVersionConflict: google-cloud-storage==2.15.0 is incompatible with apache-airflow constraints.
+```
+
+✅ **Fix:** Downgraded to a compatible `google-cloud-storage` version.
+
+---
+
+## 🐳 Docker, Volumes & Permissions
+
+**Issue 4: Permission denied on logs/artifacts**
+
+```
+PermissionError: [Errno 13] Permission denied: '/opt/airflow/logs/scheduler.log'
+```
+
+✅ **Fix:**
+
+* Run `make fix-perms`.
+* Pre-create directories in Dockerfile with correct ownership.
+
+---
+
+**Issue 5: UID/GID mismatch**
+
+```
+airflow-webserver | OSError: [Errno 13] Permission denied: '/opt/airflow/logs'
+```
+
+✅ **Fix:** Set `AIRFLOW_UID=1000` in `.env` to match Codespaces host.
+
+---
+
+**Issue 6: Disk space exhaustion**
+
+```
+OSError: [Errno 28] No space left on device
+```
+
+✅ **Fix:**
+
+* Run `make clean-disk`.
+* Aggressive cleanup with `docker system prune -a -f --volumes`.
+
+---
+
+## 🌬️ Airflow
+
+**Issue 7: Airflow UI not reachable**
+
+```
+ModuleNotFoundError: No module named 'airflow'
+```
+
+✅ **Fix:** Avoid overwriting Airflow dependencies; re-install pinned requirements.
+
+---
+
+**Issue 8: Admin user not created**
+
+```
+airflow-webserver | WARNING - Admin user not found
+```
+
+✅ **Fix:** Run `create_airflow_user.sh` during `airflow-init`.
+
+---
+
+**Issue 9: Scheduler crash (stale PID file)**
+
+```
+OSError: [Errno 98] Address already in use
+airflow-scheduler.pid already exists
+```
+
+✅ **Fix:** Run `make reset-logs` to clear stale PID files.
+
+---
+
+## 📊 MLflow
+
+**Issue 10: Serving container crash**
+
+```
+mlflow.exceptions.RestException: RESOURCE_DOES_NOT_EXIST: Registered Model 'loan_default_model' not found
+```
+
+✅ **Fix:** Bootstrap step to train + register a dummy model before starting Serve.
+
+---
+
+**Issue 11: Artifact path inconsistencies**
+
+```
+mlflow.exceptions.MlflowException: Invalid artifact location: /tmp/mlruns
+```
+
+✅ **Fix:** Standardized artifact paths → use mounted volumes + GCS bucket.
+
+---
+
+**Issue 12: CI/CD MLflow permission error**
+
+```
+PermissionError: [Errno 13] Permission denied: '/opt/airflow/mlruns/0/meta.yaml'
+```
+
+✅ **Fix:** Added `fix-mlflow-runs` service in `docker-compose.yaml`.
+
+---
+
+## ⚙️ CI/CD
+
+**Issue 13: Integration test failure (Serve not reachable)**
+
+```
+requests.exceptions.ConnectionError: HTTPConnectionPool(host='serve', port=5001): Max retries exceeded with url: /invocations
+```
+
+✅ **Fix:** Ensure tests run inside same Docker network; start Serve before integration tests.
+
+---
+
+**Issue 14: Batch prediction test failure**
+
+```
+pandas.errors.EmptyDataError: No columns to parse from file: '/opt/airflow/data/batch_input.csv'
+```
+
+✅ **Fix:** Add dummy dataset in `data/`; validate schema in test logic.
+
+---
+
+**Issue 15: Makefile error**
+
+```
+Makefile:278: *** missing separator.  Stop.
+```
+
+✅ **Fix:** Use tabs, not spaces; moved Python code into `scripts/export_env_vars.py`.
+
+---
+
+## 📦 Data & Monitoring
+
+**Issue 16: GCS credentials error**
+
+```
+google.auth.exceptions.DefaultCredentialsError: Could not automatically determine credentials
+```
+
+✅ **Fix:**
+
+* Place service account at `keys/gcs-service-account.json`.
+* Ensure correct permissions: `chmod 644`.
+
+---
+
+**Issue 17: Monitoring DAG missing predictions**
+
+```
+ValueError: ❌ No predictions found. Run batch_prediction_dag first.
+```
+
+✅ **Fix:** Add `LATEST_PREDICTION_PATH` Airflow variable + fallback marker in `airflow/artifacts/latest_prediction.json`.
+
+---
+
+**Issue 18: Evidently version mismatch**
+
+```
+ImportError: cannot import name 'BaseModel' from 'pydantic'
+```
+
+✅ **Fix:** Harmonized Evidently version across `requirements.txt` and `requirements-monitoring.txt` based on pydantic compatibility.
+
+---
+
+## 🔄 Root Causes
+
+The recurring causes behind most issues:
+
+1. **Dependency drift** → between training, serving, monitoring.
+2. **Permissions & UID mismatch** → host vs container ownership.
+3. **Path inconsistencies** → artifacts, mlruns, env vars not standardized.
+4. **Airflow bootstrap reliability** → user creation, PID handling, DB init.
+
+---
+

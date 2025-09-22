@@ -1,145 +1,100 @@
-## 🔐 Secrets & Safety
+# Security and Contributing Guidelines
 
-**Never commit secrets.** Use templates and mounts; keep real values local.
+## 🔒 Security Practices
 
-### What to keep out of Git
+We take security seriously in this project. Please follow these guidelines when working with the repo:
 
-* Real `.env` (commit **`.env.example`** only)
-* `keys/gcs-service-account.json` (gitignored)
-* Terraform state & tfvars (`infra/terraform/.terraform/`, `terraform.tfstate*`, `terraform.tfvars`)
-* Runtime artifacts/logs (`airflow/logs/`, `airflow/mlruns/`, `airflow/artifacts/`, root `mlruns/`, `artifacts/`)
-* Any real prediction outputs (`predictions_*.csv`)
+* **Secrets Management**
 
-### Safe templates
+  * Do **not** commit `.env` files, service account keys, or credentials to git.
+  * All secrets are ignored via `.gitignore` (`.env`, `keys/`, `airflow/keys/`).
+  * Use the provided `.env.example` as a template.
 
-* **`.env.example`** — placeholders for all required env vars (Airflow keys, project/bucket, MLflow URIs, SMTP/Slack if used)
-* **`infra/terraform/terraform.tfvars.example`** — placeholders for `project_id`, `region`, `bucket_name`
+* **Service Accounts & IAM**
 
-### Rotation (if something leaks)
+  * Service accounts should be created with **least privilege** roles.
+  * Example roles required:
 
-* **Airflow**: generate new `AIRFLOW__CORE__FERNET_KEY` and `AIRFLOW__WEBSERVER__SECRET_KEY`
-* **Slack**: create a new webhook; delete the old
-* **Gmail App Password (SMTP)**: revoke and create a new one
-* **GCP Service Account**: create a new key, delete the old key ID
-* Update compose/`.env`, rebuild, and redeploy
+    * `roles/storage.admin`
+    * `roles/aiplatform.admin`
+    * `roles/artifactregistry.admin`
+    * `roles/run.admin`
 
-### Principle of least privilege
+* **Dependency Security**
 
-* Grant **roles/storage.objectAdmin** to the runtime service account on the bucket.
-* For production, prefer **GCP Secret Manager** over JSON key files.
-* Do **not** grant overly broad roles like `roles/storage.admin` unless prototyping.
+  * Dependencies are pinned in `requirements.txt` and environment-specific files (`requirements-dev.txt`, etc.).
+  * Run `pip install --upgrade` cautiously and re-test before committing changes.
 
-### Scanning & pre-commit
+* **Vulnerability Reporting**
 
-Add secret scanning to prevent accidental commits:
-
-* **Pre-commit**: `gitleaks` (or `trufflehog`) hook
-* CI step to run the scanner on PRs
-
-Example `.pre-commit-config.yaml`:
-
-```yaml
-repos:
-- repo: https://github.com/pre-commit/pre-commit-hooks
-  rev: v4.6.0
-  hooks:
-    - id: check-added-large-files
-    - id: end-of-file-fixer
-    - id: trailing-whitespace
-
-- repo: https://github.com/gitleaks/gitleaks
-  rev: v8.18.4
-  hooks:
-    - id: gitleaks
-```
-
-Enable:
-
-```bash
-pip install pre-commit
-pre-commit install
-pre-commit run --all-files
-```
+  * If you discover a security issue, **do not open a public GitHub issue**.
+  * Instead, contact the maintainers directly at:
+    📧 **\[[your-email@example.com](mailto:your-email@example.com)]**
 
 ---
-## 🧑‍💻 Development & Contribution
 
-We welcome contributions to improve the project.
-Follow the guidelines below to ensure consistency, code quality, and smooth collaboration.
+## 🤝 Contributing Guidelines
 
-### Development Setup
+We welcome contributions! Please follow these practices to ensure smooth collaboration:
 
-Clone the repository and install dependencies:
+### 1. Fork & Branch
 
-```bash
-git clone https://github.com/JDede1/loan_default_prediction.git
-cd loan_default_prediction
+* Fork the repo and create a feature branch:
 
-# Install core + dev dependencies
-make install
-```
+  ```bash
+  git checkout -b feature/my-new-feature
+  ```
 
-### Code Quality
+### 2. Development Setup
 
-The project enforces **linting, formatting, and type checks**:
+* Install dependencies:
 
-```bash
-# Format code
-make format
+  ```bash
+  make install
+  ```
+* Copy `.env.example` → `.env` and configure environment variables.
 
-# Lint code
-make lint
+### 3. Code Style
 
-# Run tests
-make test
-```
+* Format code using:
 
-### Tools Used
+  ```bash
+  make format
+  ```
+* Check style compliance:
 
-* **Black** → Python code formatting
-* **isort** → Import sorting
-* **Flake8** → Style guide enforcement
-* **Mypy** → Static type checking
-* **Pytest** → Unit & integration testing
+  ```bash
+  make check-format
+  make lint
+  ```
+* Type check:
 
-### Git Workflow
+  ```bash
+  mypy src
+  ```
 
-1. **Create a feature branch**
+### 4. Testing
 
-   ```bash
-   git checkout -b feature/my-new-feature
-   ```
+* Run unit tests:
 
-2. **Commit changes with clear messages**
+  ```bash
+  make test
+  ```
+* Run integration tests (requires Docker stack running):
 
-   ```bash
-   git commit -m "Add feature: X with explanation"
-   ```
+  ```bash
+  make integration-tests
+  ```
 
-3. **Push branch & open PR**
+### 5. Pull Requests
 
-   ```bash
-   git push origin feature/my-new-feature
-   ```
-
-4. **PR Review & Merge** → Code is reviewed before merging into `main`.
-
-### Testing
-
-* Unit tests → `tests/test_utils.py`
-* Integration tests → `tests/test_prediction_integration.py` & `tests/test_batch_prediction_integration.py`
-
-To run integration tests locally:
-
-```bash
-RUN_INTEGRATION_TESTS=1 pytest -m integration -v
-```
-
-### Contribution Guidelines
-
-* Write clear commit messages (conventional commits encouraged).
-* Add/update tests for new features.
-* Ensure `make lint format test` passes before submitting PR.
-* Document new features in the **README** or inline code comments.
+* Ensure your PR passes **all checks** (lint, format, unit + integration tests).
+* Provide a **clear description** of the change.
+* Reference related issues where applicable.
 
 ---
+
+✅ With these practices, we keep the project **secure, consistent, and maintainable**.
+
+---
+
